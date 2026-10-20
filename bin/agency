@@ -1,0 +1,729 @@
+#!/usr/bin/env python3
+"""agency — the machine. The repo is the system; this CLI is the steering wheel.
+
+Data model (conflict-proof by construction):
+  agents/<name>.json            roster (last_seen = liveness)
+  board/tasks/<id>.json         small cards: state, lease, history
+  board/heartbeats/<me>.jsonl   APPEND-ONLY, one file per agent — no conflicts
+  board/votes/<task-id>.jsonl   APPEND-ONLY, one file per task   — no conflicts
+  jobs/<id>/CLAIM.<agent>.json  unique filenames                  — no conflicts
+  jobs/<id>/STATUS.json         state of a job (retry-on-write; rare)
+  jobs/<id>/HANDOFF.md          rolling checkpoint (append-only)
+
+Writes go to the local clone and are committed+pushed. Env:
+  AGENCY_AGENT   your name (required for writes)
+  AGENCY_DIR     repo root (default: git rev-parse --show-toplevel)
+  AGENCY_NO_PUSH 1 = commit but never push (tests)
+"""
+import argparse, json, os, re, subprocess, sys, time
+from datetime import datetime, timezone, timedelta
+
+EPOCH = "2026-10-20.2"
+ALIVE_MIN, STALE_MIN, DEAD_MIN = 30, 45, 45   # liveness thresholds (minutes)
+
+# ---------------------------------------------------------------- helpers
+def now():
+    return datetime.now(timezone.utc)
+
+def iso(dt=None):
+    return (dt or now()).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def parse_ts(s):
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+def root():
+    r = os.environ.get("AGENCY_DIR")
+    if r:
+        return r
+    out = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                         capture_output=True, text=True)
+    return out.stdout.strip() if out.returncode == 0 else os.getcwd()
+
+def sh(*args, **kw):
+    return subprocess.run(args, capture_output=True, text=True, **kw)
+
+def agent_name(args):
+    name = getattr(args, "agent", None) or os.environ.get("AGENCY_AGENT")
+    if not name:
+        die("no identity: set AGENCY_AGENT=<you> or pass --agent <you>")
+    return name
+
+def die(msg):
+    print(f"agency: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+def jload(path, default=None):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return default
+
+def jsave(path, data):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(data, f, indent=1, sort_keys=True)
+        f.write("\n")
+    os.replace(tmp, path)
+
+def jappend(path, obj):        # append-only jsonl — the conflict-free write
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a") as f:
+        f.write(json.dumps(obj, sort_keys=True) + "\n")
+
+def jreadlines(path):
+    out = []
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        out.append(json.loads(line))
+                    except Exception:
+                        pass
+    except FileNotFoundError:
+        pass
+    return out
+
+def commit_push(root, paths, msg):
+    """Commit touched paths and push (unless AGENCY_NO_PUSH). Never store tokens."""
+    sh("git", "-C", root, "add", *paths)
+    st = sh("git", "-C", root, "status", "--porcelain", *paths)
+    if not st.stdout.strip():
+        return True
+    sh("git", "-C", root, "commit", "-m", msg)
+    if os.environ.get("AGENCY_NO_PUSH") == "1":
+        return True
+    for attempt in range(3):
+        r = sh("git", "-C", root, "push")
+        if r.returncode == 0:
+            return True
+        sh("git", "-C", root, "pull", "--rebase", "-q")
+    print(f"agency: PUSH FAILED after retries: {r.stderr.strip()[:200]}", file=sys.stderr)
+    return False
+
+def life_of(last_seen_s, now_dt):
+    last = parse_ts(last_seen_s)
+    if not last:
+        return "COLD", None
+    age = (now_dt - last).total_seconds() / 60
+    if age <= ALIVE_MIN:
+        return "ALIVE", round(age)
+    if age <= STALE_MIN:
+        return "STALE", round(age)
+    return "DEAD", round(age)
+
+# ---------------------------------------------------------------- roster
+def roster_path(root, name):
+    return os.path.join(root, "agents", f"{name}.json")
+
+def touch_agent(root, name, now_dt, extra=None):
+    p = roster_path(root, name)
+    d = jload(p)
+    if not d:
+        die(f"'{name}' is not on the roster — run: agency init --name {name}")
+    d["last_seen"] = iso(now_dt)
+    if extra:
+        d.update(extra)
+    jsave(p, d)
+    return d
+
+# ---------------------------------------------------------------- board
+def task_path(root, tid):
+    return os.path.join(root, "board", "tasks", f"{tid}.json")
+
+def task_history(d, action, by, now_dt):
+    d.setdefault("history", []).append({"ts": iso(now_dt), "by": by, "action": action})
+    d["updated_ts"] = iso(now_dt)
+
+def save_task(root, d):
+    jsave(task_path(root, d["id"]), d)
+
+def load_tasks(root):
+    td = os.path.join(root, "board", "tasks")
+    out = []
+    if os.path.isdir(td):
+        for f in sorted(os.listdir(td)):
+            if f.endswith(".json"):
+                d = jload(os.path.join(td, f))
+                if d:
+                    out.append(d)
+    return out
+
+def lease_expired(d, now_dt):
+    exp = parse_ts((d.get("lease") or {}).get("expires"))
+    return bool(exp and exp < now_dt)
+
+# ---------------------------------------------------------------- votes
+def votes_for(root, tid):
+    return jreadlines(os.path.join(root, "board", "votes", f"{tid}.jsonl"))
+
+def tally(root, tid):
+    acc = [v for v in votes_for(root, tid) if v.get("verdict", "").startswith("accept")]
+    den = [v for v in votes_for(root, tid) if v.get("verdict", "").startswith("deny")]
+    return acc, den
+
+# ---------------------------------------------------------------- jobs
+def job_dir(root, jid):
+    return os.path.join(root, "jobs", jid)
+
+def job_ids(root):
+    jd = os.path.join(root, "jobs")
+    if not os.path.isdir(jd):
+        return []
+    return [j for j in sorted(os.listdir(jd))
+            if os.path.isdir(os.path.join(jd, j)) and not j.startswith("_")]
+
+def job_holders(root, jid, now_dt):
+    holders = []
+    jd = job_dir(root, jid)
+    for f in sorted(os.listdir(jd)):
+        if f.startswith("CLAIM.") and f.endswith(".json"):
+            c = jload(os.path.join(jd, f))
+            if not c:
+                continue
+            exp = parse_ts(c.get("lease_expires"))
+            holders.append({
+                "agent": c.get("agent", f[6:-5]),
+                "ts": c.get("ts"),
+                "expires": c.get("lease_expires"),
+                "expired": bool(exp and exp < now_dt),
+            })
+    return holders
+
+# ================================================================ verbs
+def cmd_init(args):
+    root_, me = root(), args.name
+    now_dt = now()
+    p = roster_path(root_, me)
+    if jload(p) and not args.force:
+        die(f"'{me}' already registered (use --force to update)")
+    d = jload(p) or {}
+    d.update({
+        "name": me,
+        "display": args.display or me.upper(),
+        "kind": "ai",
+        "role": args.role,
+        "caps": args.caps or "—",
+        "status": "active",
+        "joined_ts": d.get("joined_ts", iso(now_dt)),
+        "last_seen": iso(now_dt),
+        "epoch": args.epoch or EPOCH,
+    })
+    jsave(p, d)
+    jappend(os.path.join(root_, "board", "heartbeats", f"{me}.jsonl"),
+            {"ts": iso(now_dt), "kind": "join", "note": f"registered · epoch {d['epoch']}"})
+    commit_push(root_, [f"agents/{me}.json", f"board/heartbeats/{me}.jsonl"],
+                f"roster: {me} registered (epoch {d['epoch']})")
+    print(f"{me} registered · role {d['role']} · epoch {d['epoch']} · {iso(now_dt)}")
+    print("next: agency heartbeat & start your pulse loop; then jobs list / tasks list")
+
+def cmd_whoami(args):
+    root_, me = root(), agent_name(args)
+    d = jload(roster_path(root_, me)) or die(f"'{me}' not registered")
+    life, age = life_of(d.get("last_seen"), now())
+    print(f"{d['name']} · {d.get('role')} · epoch {d.get('epoch')} · {life}"
+          + (f" ({age}m)" if age is not None else ""))
+
+def cmd_heartbeat(args):
+    root_, me = root(), agent_name(args)
+    now_dt = now()
+    touch_agent(root_, me, now_dt)
+    jappend(os.path.join(root_, "board", "heartbeats", f"{me}.jsonl"),
+            {"ts": iso(now_dt), "kind": args.kind, "note": args.note or "still working"})
+    commit_push(root_, [f"agents/{me}.json", f"board/heartbeats/{me}.jsonl"],
+                f"pulse: {me}")
+    print(f"pulse {me} @ {iso(now_dt)}")
+
+# ---- tasks
+def cmd_tasks(args):
+    root_, now_dt = root(), now()
+    me = getattr(args, "agent", None) or os.environ.get("AGENCY_AGENT")
+
+    if args.cmd == "list":
+        rows = load_tasks(root_)
+        if args.status:
+            rows = [t for t in rows if t.get("status") == args.status]
+        if args.mine:
+            rows = [t for t in rows if t.get("owner") == me]
+        for t in rows:
+            flag = " ⏰LEASE EXPIRED" if t.get("status") == "claimed" and lease_expired(t, now_dt) else ""
+            print(f"{t['id']}  {t.get('status','?'):8}  {t.get('owner') or '—':14}  "
+                  f"{(t.get('title') or '')[:64]}{flag}")
+        print(f"({len(rows)} shown · claim: agency tasks claim <id> --hours N)")
+        return
+
+    if args.cmd == "new":
+        me = agent_name(args)
+        tid = args.id or f"t-{now_dt.strftime('%Y%m%d')}-{os.urandom(2).hex()}"
+        d = {"id": tid, "title": args.title, "desc": args.desc or "", "status": "open",
+             "owner": None, "created_by": me, "created_ts": iso(now_dt),
+             "updated_ts": iso(now_dt), "priority": args.priority, "tags": args.tags or [],
+             "deps": [], "parent": None, "branch": None, "pr": None, "lease": None,
+             "history": []}
+        task_history(d, "created", me, now_dt)
+        save_task(root_, d)
+        commit_push(root_, [f"board/tasks/{tid}.json"], f"board: {tid} created")
+        print(tid)
+        return
+
+    t = jload(task_path(root_, args.id)) or die(f"no such task: {args.id}")
+    me = agent_name(args)
+
+    if args.cmd == "claim":
+        if t.get("status") not in ("open", "dropped", "blocked"):
+            die(f"{t['id']} is {t.get('status')} — not claimable")
+        t["status"], t["owner"] = "claimed", me
+        exp = now_dt + timedelta(hours=args.hours)
+        t["lease"] = {"agent": me, "since": iso(now_dt), "expires": iso(exp),
+                      "checkpoint": ""}
+        t["branch"] = f"agent/{me}/{t['id']}"
+        task_history(t, f"claimed by {me} (lease {args.hours}h)", me, now_dt)
+        save_task(root_, t)
+        commit_push(root_, [f"board/tasks/{t['id']}.json"], f"board: {t['id']} claimed by {me}")
+        print(f"claimed {t['id']} · lease until {iso(exp)} · branch {t['branch']}")
+        return
+
+    if t.get("owner") != me and args.cmd in ("heartbeat", "release"):
+        die(f"{t['id']} is held by {t.get('owner')}")
+
+    if args.cmd == "heartbeat":
+        t["lease"]["expires"] = iso(now_dt + timedelta(hours=args.hours))
+        t["lease"]["checkpoint"] = args.note or ""
+        task_history(t, f"heartbeat by {me}: {args.note or '—'}", me, now_dt)
+        save_task(root_, t)
+        jappend(os.path.join(root_, "board", "heartbeats", f"{me}.jsonl"),
+                {"ts": iso(now_dt), "kind": "checkpoint", "note": args.note or ""})
+        touch_agent(root_, me, now_dt)
+        commit_push(root_, [f"board/tasks/{t['id']}.json", f"agents/{me}.json",
+                            f"board/heartbeats/{me}.jsonl"],
+                    f"board: {t['id']} heartbeat by {me}")
+        print(f"heartbeat {t['id']} · lease until {t['lease']['expires']}")
+        return
+
+    if args.cmd == "release":
+        task_history(t, f"released by {me}", me, now_dt)
+        t["status"], t["owner"], t["lease"] = "open", None, None
+        save_task(root_, t)
+        commit_push(root_, [f"board/tasks/{t['id']}.json"], f"board: {t['id']} released by {me}")
+        print(f"released {t['id']} — back in the pool")
+        return
+
+    if args.cmd == "review":
+        t["status"] = "review"
+        task_history(t, f"moved to review by {me}", me, now_dt)
+        save_task(root_, t)
+        commit_push(root_, [f"board/tasks/{t['id']}.json"], f"board: {t['id']} → review")
+        print(f"{t['id']} → review · quorum: 2 non-owner accept-inspected (48h)")
+        return
+
+    if args.cmd == "done":
+        t["status"], t["owner"], t["lease"] = "done", t.get("owner"), None
+        task_history(t, f"closed by {me}", me, now_dt)
+        save_task(root_, t)
+        commit_push(root_, [f"board/tasks/{t['id']}.json"], f"board: {t['id']} done")
+        print(f"{t['id']} done")
+        return
+
+def cmd_sweep(args):
+    root_, now_dt = root(), now()
+    swept = []
+    for t in load_tasks(root_):
+        if t.get("status") == "claimed" and lease_expired(t, now_dt):
+            swept.append(t)
+            if args.apply:
+                old = t.get("owner")
+                task_history(t, f"sweep: lease of {old} expired — returned to pool",
+                             "sweep", now_dt)
+                t["status"], t["owner"], t["lease"] = "open", None, None
+                save_task(root_, t)
+    jobs_swept = []
+    for jid in job_ids(root_):
+        for h in job_holders(root_, jid, now_dt):
+            if h["expired"]:
+                jobs_swept.append((jid, h["agent"]))
+                if args.apply:
+                    st = jload(os.path.join(job_dir(root_, jid), "STATUS.json"), {})
+                    st.update({"status": "open", "owner": None, "updated_ts": iso(now_dt)})
+                    jsave(os.path.join(job_dir(root_, jid), "STATUS.json"), st)
+                    with open(os.path.join(job_dir(root_, jid), "HANDOFF.md"), "a") as f:
+                        f.write(f"{iso(now_dt)} · sweep · lease of {h['agent']} expired — job back in the pool\n")
+    for t in swept:
+        print(f"{'SWEPT' if args.apply else 'EXPIRED'} {t['id']} (was {(t.get('lease') or {}).get('agent')})")
+    for jid, ag in jobs_swept:
+        print(f"{'SWEPT' if args.apply else 'EXPIRED'} job {jid} (was {ag})")
+    if not swept and not jobs_swept:
+        print("nothing to sweep — all leases alive")
+    if args.apply and (swept or jobs_swept):
+        paths = [f"board/tasks/{t['id']}.json" for t in swept]
+        paths += [f"jobs/{jid}/STATUS.json" for jid, _ in jobs_swept]
+        paths += [f"jobs/{jid}/HANDOFF.md" for jid, _ in jobs_swept]
+        commit_push(root_, paths, "sweep: expired leases returned to the pool")
+
+# ---- jobs
+def cmd_jobs(args):
+    root_, now_dt = root(), now()
+
+    if args.cmd == "list":
+        for jid in job_ids(root_):
+            jd = job_dir(root_, jid)
+            st = jload(os.path.join(jd, "STATUS.json"), {})
+            holders = job_holders(root_, jid, now_dt)
+            active = [h for h in holders if not h["expired"]]
+            owner = active[-1]["agent"] if active else (st.get("owner") or "—")
+            status = st.get("status") or ("claimed" if active else "open")
+            exp = " ⏰" if any(h["expired"] for h in holders) else ""
+            print(f"{jid:36} {status:8} {owner:14}{exp}")
+        print("(claim: agency jobs claim <id> --hours N)")
+        return
+
+    jid = args.id
+    jd = job_dir(root_, jid)
+    if not os.path.isdir(jd):
+        die(f"no such job: {jid}")
+
+    if args.cmd == "claim":
+        me = agent_name(args)
+        active = [h for h in job_holders(root_, jid, now_dt) if not h["expired"]]
+        other = [h for h in active if h["agent"] != me]
+        if other:
+            die(f"{jid} is held by {other[-1]['agent']} until {other[-1]['expires']}")
+        if any(h["agent"] == me for h in active):
+            die(f"you already hold {jid}")
+        exp = now_dt + timedelta(hours=args.hours)
+        jappend(os.path.join(jd, f"CLAIM.{me}.json"), {})  # ensure unique file exists
+        jsave(os.path.join(jd, f"CLAIM.{me}.json"),
+              {"agent": me, "ts": iso(now_dt), "lease_hours": args.hours,
+               "lease_expires": iso(exp), "epoch": EPOCH})
+        st = jload(os.path.join(jd, "STATUS.json"), {})
+        st.update({"status": "claimed", "owner": me, "phase": st.get("phase", "P1"),
+                   "updated_ts": iso(now_dt)})
+        jsave(os.path.join(jd, "STATUS.json"), st)
+        with open(os.path.join(jd, "HANDOFF.md"), "a") as f:
+            f.write(f"{iso(now_dt)} · {me} · claimed · lease {args.hours}h → {iso(exp)} · "
+                    f"read BRIEF.md + PHASES.md first\n")
+        touch_agent(root_, me, now_dt)
+        commit_push(root_, [f"jobs/{jid}/CLAIM.{me}.json", f"jobs/{jid}/STATUS.json",
+                            f"jobs/{jid}/HANDOFF.md", f"agents/{me}.json"],
+                    f"jobs: {jid} claimed by {me}")
+        print(f"claimed {jid} · lease until {iso(exp)} · branch agent/{me}/{jid}")
+        return
+
+    if args.cmd == "heartbeat":
+        me = agent_name(args)
+        held = [h for h in job_holders(root_, jid, now_dt) if h["agent"] == me and not h["expired"]]
+        if not held:
+            die(f"you hold no live lease on {jid}")
+        c = jload(os.path.join(jd, f"CLAIM.{me}.json"))
+        c["lease_expires"] = iso(now_dt + timedelta(hours=args.hours))
+        jsave(os.path.join(jd, f"CLAIM.{me}.json"), c)
+        with open(os.path.join(jd, "HANDOFF.md"), "a") as f:
+            f.write(f"{iso(now_dt)} · {me} · checkpoint · {args.note or '—'}\n")
+        jappend(os.path.join(root_, "board", "heartbeats", f"{me}.jsonl"),
+                {"ts": iso(now_dt), "kind": "checkpoint", "note": args.note or ""})
+        touch_agent(root_, me, now_dt)
+        commit_push(root_, [f"jobs/{jid}/CLAIM.{me}.json", f"jobs/{jid}/HANDOFF.md",
+                            f"board/heartbeats/{me}.jsonl", f"agents/{me}.json"],
+                    f"jobs: {jid} heartbeat by {me}")
+        print(f"checkpoint {jid} · lease until {c['lease_expires']}")
+        return
+
+    if args.cmd == "release":
+        me = agent_name(args)
+        st = jload(os.path.join(jd, "STATUS.json"), {})
+        st.update({"status": "released", "owner": None, "updated_ts": iso(now_dt)})
+        jsave(os.path.join(jd, "STATUS.json"), st)
+        with open(os.path.join(jd, "HANDOFF.md"), "a") as f:
+            f.write(f"{iso(now_dt)} · {me} · released · {args.note or '—'}\n")
+        commit_push(root_, [f"jobs/{jid}/STATUS.json", f"jobs/{jid}/HANDOFF.md"],
+                    f"jobs: {jid} released by {me}")
+        print(f"released {jid}")
+        return
+
+    if args.cmd == "relay":
+        me = agent_name(args)
+        print(f"run: bash tools/handoff.sh {jid} {args.reason}")
+        return
+
+# ---- review / votes
+def cmd_review(args):
+    root_, now_dt = root(), now()
+    me = getattr(args, "agent", None) or os.environ.get("AGENCY_AGENT")
+    rows = [t for t in load_tasks(root_) if t.get("status") == "review"]
+    scored = []
+    for t in rows:
+        acc, den = tally(root_, t["id"])
+        scored.append((len(acc) - len(den), t, acc, den))
+    scored.sort(key=lambda x: x[0])
+    if args.cmd == "next" and scored:
+        _, t, acc, den = scored[0]
+        if t.get("owner") == me:
+            print(f"{t['id']} is YOURS — you never seal your own work. Take the next one:")
+            for _, t2, a2, d2 in scored[1:2]:
+                print(f"  {t2['id']}  votes {len(a2)}A/{len(d2)}D  {t2.get('title','')[:60]}")
+            return
+        print(f"{t['id']}  votes {len(acc)}A/{len(den)}D  {t.get('title','')[:60]}")
+        print(f"inspect at: {t.get('branch')} / {t.get('pr') or 'see HANDOFF.md'}")
+        return
+    for _, t, acc, den in scored:
+        mine = " (yours — no self-vote)" if t.get("owner") == me else ""
+        print(f"{t['id']}  {len(acc)}A/{len(den)}D  {t.get('owner') or '—':12} "
+              f"{(t.get('title') or '')[:52]}{mine}")
+    if not scored:
+        print("review queue empty — build something")
+
+def cmd_vote(args):
+    root_, now_dt = root(), now()
+    me = agent_name(args)
+    t = jload(task_path(root_, args.id)) or die(f"no such task: {args.id}")
+    if t.get("owner") == me:
+        die("no self-review/vote — your vote on your own work is worth zero")
+    prior = [v for v in votes_for(root_, args.id) if v.get("by") == me]
+    if prior:
+        die(f"you already voted on {args.id}: {prior[-1]['verdict']}")
+    if not args.reason or len(args.reason) < 8:
+        die("a ballot carries evidence: --reason '<head SHA> + what you ran'")
+    jappend(os.path.join(root_, "board", "votes", f"{args.id}.jsonl"),
+            {"ts": iso(now_dt), "by": me, "verdict": args.verdict, "reason": args.reason})
+    touch_agent(root_, me, now_dt)
+    acc, den = tally(root_, args.id)
+    print(f"ballot: {me} {args.verdict} on {args.id} — now {len(acc)}A/{len(den)}D")
+    if len(acc) >= 2 and not den:
+        t["status"] = "done"
+        task_history(t, f"acceptance quorum met ({len(acc)}A/0D)", "quorum", now_dt)
+        save_task(root_, t)
+        print(f"QUORUM: {args.id} accepted (2 non-owner inspecting ballots)")
+    if den:
+        print(f"DENY present — manager: consider auto-revert of the merge")
+    commit_push(root_, [f"board/votes/{args.id}.jsonl"] + ([f"board/tasks/{args.id}.json"] if len(acc) >= 2 and not den else []),
+                f"vote: {me} {args.verdict} {args.id}")
+
+def cmd_votes(args):
+    root_ = root()
+    acc, den = tally(root_, args.id)
+    for v in acc + den:
+        print(f"{v['ts']}  {v['by']:12}  {v['verdict']:16}  {v.get('reason','')[:70]}")
+    print(f"tally: {len(acc)} accept / {len(den)} deny")
+
+# ---- tower / status / digest / validate
+def cmd_tower(args):
+    root_, now_dt = root(), now()
+    if args.now:
+        now_dt = parse_ts(args.now)
+    agents = []
+    adir = os.path.join(root_, "agents")
+    for f in sorted(os.listdir(adir)) if os.path.isdir(adir) else []:
+        if f.endswith(".json"):
+            d = jload(os.path.join(adir, f))
+            if d and d.get("kind") != "human":
+                agents.append(d)
+
+    holds = {}
+    for t in load_tasks(root_):
+        if t.get("status") in ("claimed", "review") and t.get("owner"):
+            holds.setdefault(t["owner"], []).append(
+                f"{t['id']}{'⏰' if lease_expired(t, now_dt) else ''}")
+    for jid in job_ids(root_):
+        for h in job_holders(root_, jid, now_dt):
+            holds.setdefault(h["agent"], []).append(
+                f"{jid}{'⏰' if h['expired'] else ''}")
+
+    rows, zombies = [], []
+    for d in agents:
+        life, age = life_of(d.get("last_seen"), now_dt)
+        held = holds.get(d["name"], [])
+        if held and life in ("DEAD", "COLD"):
+            zombies.append(d["name"])
+        rows.append((d["name"], d.get("role", "?"), life, d.get("last_seen") or "never",
+                     age, held))
+    order = {"ALIVE": 0, "STALE": 1, "DEAD": 2, "COLD": 3}
+    rows.sort(key=lambda r: (order[r[2]], r[0]))
+    counts = {k: sum(1 for r in rows if r[2] == k) for k in order}
+
+    if args.json:
+        print(json.dumps({"now": iso(now_dt), "verdicts": counts,
+                          "zombie_leases": zombies,
+                          "agents": [{"agent": r[0], "role": r[1], "life": r[2],
+                                      "last_seen": r[3], "age_min": r[4], "held": r[5]}
+                                     for r in rows]}, indent=1))
+        sys.exit(1 if zombies else 0)
+
+    lines = [f"# TOWER — {now_dt.strftime('%Y-%m-%d %H:%M')} UTC", "",
+             f"**{counts['ALIVE']} alive · {counts['STALE']} stale · "
+             f"{counts['DEAD']} dead · {counts['COLD']} cold**"]
+    if zombies:
+        lines += ["", f"🚨 **ZOMBIE LEASES** (holder presumed dead): {', '.join(zombies)} — "
+                      f"sweep now: `agency tasks sweep --apply`"]
+    lines += ["", "| agent | role | life | last seen | age | holds |",
+              "|---|---|---|---|---|---|"]
+    icons = {"ALIVE": "🟢", "STALE": "🟡", "DEAD": "🔴", "COLD": "⚪"}
+    for name, role, life, seen, age, held in rows:
+        lines.append(f"| {name} | {role} | {icons[life]} {life} | {seen} | "
+                     f"{f'{age}m' if age is not None else '—'} | {', '.join(held) or '—'} |")
+    lines += ["", "life = board `last_seen` age · ⏰ = expired lease still held · "
+                  "DEAD >45m · sweep before re-listing"]
+    out = "\n".join(lines)
+    print(out)
+    if args.md:
+        with open(args.md, "w") as f:
+            f.write(out + "\n")
+    sys.exit(1 if zombies else 0)
+
+def cmd_status(args):
+    root_, now_dt = root(), now()
+    me = getattr(args, "agent", None) or os.environ.get("AGENCY_AGENT")
+    tasks = load_tasks(root_)
+    print(f"── agency · {iso(now_dt)} ──")
+    print(f"tasks: {len(tasks)} "
+          f"(open {sum(1 for t in tasks if t.get('status')=='open')} · "
+          f"claimed {sum(1 for t in tasks if t.get('status')=='claimed')} · "
+          f"review {sum(1 for t in tasks if t.get('status')=='review')})")
+    print(f"jobs: {len(job_ids(root_))} · agents: "
+          f"{len([f for f in os.listdir(os.path.join(root_,'agents')) if f.endswith('.json')]) if os.path.isdir(os.path.join(root_,'agents')) else 0}")
+    exp = [t for t in tasks if t.get("status") == "claimed" and lease_expired(t, now_dt)]
+    if exp:
+        print(f"⏰ expired leases: {', '.join(t['id'] for t in exp)} — agency tasks sweep --apply")
+    if me:
+        mine = [t for t in tasks if t.get("owner") == me]
+        for t in mine:
+            print(f"you hold: {t['id']} · {t.get('status')}")
+    print("(full liveness: agency tower)")
+
+def cmd_digest(args):
+    root_ = root()
+    os.environ["AGENCY_DIR"] = root_
+    tw = subprocess.run([sys.executable, os.path.join(root_, "bin", "agency"), "tower"],
+                        capture_output=True, text=True)
+    with open(os.path.join(root_, "TOWER.md"), "w") as f:
+        f.write(tw.stdout + "\n")
+    st = subprocess.run([sys.executable, os.path.join(root_, "bin", "agency"), "status"],
+                        capture_output=True, text=True, env={**os.environ, "AGENCY_AGENT": ""})
+    with open(os.path.join(root_, "STATUS.md"), "w") as f:
+        f.write("# STATUS.md — generated, do not edit\n\n```\n" + st.stdout + "\n```\n")
+    print("TOWER.md + STATUS.md written")
+
+def cmd_validate(args):
+    root_, now_dt = root(), now()
+    errors, warnings = 0, 0
+    agent_names = set()
+    adir = os.path.join(root_, "agents")
+    for f in sorted(os.listdir(adir)) if os.path.isdir(adir) else []:
+        d = jload(os.path.join(adir, f))
+        if not d or "name" not in d:
+            print(f"error {f}: unparseable roster file"); errors += 1
+        else:
+            agent_names.add(d["name"])
+    for t in load_tasks(root_):
+        if t.get("status") not in ("open", "claimed", "review", "done", "dropped", "blocked"):
+            print(f"error {t.get('id')}: bad status {t.get('status')}"); errors += 1
+        if t.get("owner") and t["owner"] not in agent_names:
+            print(f"warn  {t.get('id')}: owner {t['owner']} not on roster"); warnings += 1
+        if t.get("status") == "claimed" and lease_expired(t, now_dt):
+            print(f"warn  {t.get('id')}: lease expired — sweep"); warnings += 1
+    for jid in job_ids(root_):
+        jd = job_dir(root_, jid)
+        for req in ("BRIEF.md",):
+            if not os.path.exists(os.path.join(jd, req)):
+                print(f"warn  jobs/{jid}: missing {req}"); warnings += 1
+        for h in job_holders(root_, jid, now_dt):
+            if h["agent"] not in agent_names:
+                print(f"warn  jobs/{jid}: claim by {h['agent']} not on roster"); warnings += 1
+    print(f"{errors} errors · {warnings} warnings")
+    sys.exit(1 if errors else 0)
+
+def cmd_ping(args):
+    import urllib.request
+    url = f"https://ntfy.sh/{args.topic}"
+    req = urllib.request.Request(url, data=(args.message or "").encode(),
+                                 headers={"Title": args.title or "agency"})
+    try:
+        urllib.request.urlopen(req, timeout=10).read()
+        print(f"pinged {args.topic}")
+    except Exception as e:
+        print(f"ping failed ({e}) — the wire is a doorbell; the repo is the record")
+
+# ================================================================ main
+def main():
+    ap = argparse.ArgumentParser(prog="agency", description="the machine")
+    ap.add_argument("--agent", help="your name (default: $AGENCY_AGENT)")
+    ap.add_argument("--now", help="override clock (ISO; tests)")
+    sub = ap.add_subparsers(dest="verb", required=True)
+
+    p = sub.add_parser("init"); p.add_argument("--name", required=True)
+    p.add_argument("--display"); p.add_argument("--role", default="worker")
+    p.add_argument("--caps"); p.add_argument("--epoch"); p.add_argument("--force", action="store_true")
+    p.set_defaults(fn=cmd_init)
+
+    p = sub.add_parser("whoami"); p.set_defaults(fn=cmd_whoami)
+
+    p = sub.add_parser("heartbeat")
+    p.add_argument("--note"); p.add_argument("--kind", default="pulse")
+    p.set_defaults(fn=cmd_heartbeat)
+
+    p = sub.add_parser("tasks")
+    s = p.add_subparsers(dest="cmd", required=True)
+    q = s.add_parser("list"); q.add_argument("--status"); q.add_argument("--mine", action="store_true")
+    q = s.add_parser("new"); q.add_argument("--title", required=True); q.add_argument("--desc")
+    q.add_argument("--id"); q.add_argument("--priority", type=int, default=3)
+    q.add_argument("--tags", nargs="*")
+    q = s.add_parser("claim"); q.add_argument("id"); q.add_argument("--hours", type=float, default=4)
+    q = s.add_parser("heartbeat"); q.add_argument("id")
+    q.add_argument("--note"); q.add_argument("--hours", type=float, default=4)
+    q = s.add_parser("release"); q.add_argument("id")
+    q = s.add_parser("review"); q.add_argument("id")
+    q = s.add_parser("done"); q.add_argument("id")
+    p.set_defaults(fn=cmd_tasks)
+
+    p = sub.add_parser("sweep"); p.add_argument("--apply", action="store_true")
+    p.set_defaults(fn=cmd_sweep)
+
+    p = sub.add_parser("jobs")
+    s = p.add_subparsers(dest="cmd", required=True)
+    s.add_parser("list")
+    q = s.add_parser("claim"); q.add_argument("id"); q.add_argument("--hours", type=float, default=4)
+    q = s.add_parser("heartbeat"); q.add_argument("id")
+    q.add_argument("--note"); q.add_argument("--hours", type=float, default=4)
+    q = s.add_parser("release"); q.add_argument("id"); q.add_argument("--note")
+    q = s.add_parser("relay"); q.add_argument("id"); q.add_argument("--reason", default="planned-rotation")
+    p.set_defaults(fn=cmd_jobs)
+
+    p = sub.add_parser("review")
+    s = p.add_subparsers(dest="cmd", required=True)
+    s.add_parser("list"); s.add_parser("next")
+    p.set_defaults(fn=cmd_review)
+
+    p = sub.add_parser("vote"); p.add_argument("id")
+    p.add_argument("verdict", choices=["accept-inspected", "deny-inspected"])
+    p.add_argument("--reason"); p.set_defaults(fn=cmd_vote)
+
+    p = sub.add_parser("votes"); p.add_argument("id"); p.set_defaults(fn=cmd_votes)
+
+    p = sub.add_parser("tower")
+    p.add_argument("--md"); p.add_argument("--json", action="store_true")
+    p.add_argument("--now", help="fixed clock (ISO; tests)")
+    p.set_defaults(fn=cmd_tower)
+
+    p = sub.add_parser("status"); p.set_defaults(fn=cmd_status)
+    p = sub.add_parser("digest"); p.set_defaults(fn=cmd_digest)
+    p = sub.add_parser("validate"); p.set_defaults(fn=cmd_validate)
+
+    p = sub.add_parser("ping"); p.add_argument("--topic", default="heartbeatcode")
+    p.add_argument("message"); p.add_argument("--title")
+    p.set_defaults(fn=cmd_ping)
+
+    args = ap.parse_args()
+    if args.now:
+        global now
+        fixed = parse_ts(args.now)
+        now = lambda: fixed   # noqa: E731
+    args.fn(args)
+
+if __name__ == "__main__":
+    main()

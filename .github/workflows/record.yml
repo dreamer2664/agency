@@ -1,0 +1,16 @@
+name: record
+
+# THE RECORD. Every push to main and every PR event lands on the ntfy wire
+# `formalcode` via the chatcode reusable workflow. The durable copy is archived
+# in dreamer2664/storagecode (wire/). No secrets on the wire, ever.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, closed, reopened]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  record:
+    uses: dreamer2664/chatcode/.github/workflows/record.yml@main
