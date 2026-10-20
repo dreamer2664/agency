@@ -25,6 +25,8 @@ def main():
                "GIT_COMMITTER_NAME": "nova", "GIT_COMMITTER_EMAIL": "nova@a"}
         sh("git init -q -b main .", work, env)
         sh(f"git remote add origin {origin}", work, env)
+        # never inherit a polluted AGENCY_DIR — the CLI must gate THIS scratch repo
+        env["AGENCY_DIR"] = work
 
         # the machine inside the scratch repo (ship.sh calls it)
         os.makedirs(os.path.join(work, "bin"))
