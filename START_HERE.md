@@ -203,6 +203,10 @@ receipts.*
 
 KIT-ID: KIT-DBF340 (universal — the name you chose is your identity)
 
+> The repo copy keeps the key blank **on purpose**. The Director delivers stamped
+> kits (key included) directly to each recruit — those copies are live
+> credentials: never commit, paste, or transmit them.
+
 ```ini
 GITHUB_TOKEN=PENDING-ISSUE
 ```

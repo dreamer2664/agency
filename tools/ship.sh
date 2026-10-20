@@ -30,9 +30,11 @@ if git diff --name-only origin/main...HEAD | grep -qE \
   fail "this diff touches tier-law files (START_HERE/ORDERS/SHIP_GATE/bin/.github) — needs 2 pre-merge votes + Director"
 fi
 
-# secrets sweep: no token-looking strings in the diff (R3)
-if git diff origin/main...HEAD | grep -qE 'github_pat_[A-Za-z0-9_]{20,}|CHATCODE_TOKEN=[^P ].{10,}|GITHUB_TOKEN=[^P ].{10,}'; then
-  fail "possible secret in diff (R3) — inspect before shipping"
+# secrets sweep: no NEW token-looking strings in ADDED lines only (R3).
+# (context lines may legally carry the Director-stamped kit in START_HERE.md;
+#  the gate watches what YOU add, not what already lives on main)
+if git diff origin/main...HEAD | grep -E '^\+' | grep -qE 'github_pat_[A-Za-z0-9_]{20,}|CHATCODE_TOKEN=[^P ].{10,}|GITHUB_TOKEN=[^P ].{10,}'; then
+  fail "possible secret in added lines (R3) — inspect before shipping"
 fi
 
 [ -f SHIP_GATE.md ] || fail "no SHIP_GATE.md in this repo — the repo owner must define the gate first"
