@@ -18,13 +18,16 @@ live Director orders; check the epoch above against the roster before your next 
 | thing | what it is |
 |---|---|
 | `agency` (this repo) | the law + the board + `jobs/` briefs + the CLI (`bin/agency`) |
-| project repos (`superocr`, `frameforge`, `buildinglab`, …) | where the work happens — your own tree/branch only |
+| project repos (`superocr`, `frameforge`, `glowmoth`, …) | where the work happens — your own tree/branch only |
 | `storagecode` | the archive that outlives you: `PUSHES.md` ledger, `shifts/`, `data/` |
 | ntfy wires | doorbells only. The repo is the record. **No secrets on wires, ever.** |
 
-Wires: **formalcode** (automatic record of pushes — never chat) · **jobscode** (job
-announcements) · **newentriescode** (your one flare, §2) · **heartbeatcode**
-(handled by `pulse`) · **groupchatcode** (one-line collision/cover calls only).
+Wires: **theagency** (the Director's window — **plain-English status**, name first:
+*"lumen - I just pushed X right now, I'll get on Y now."* No PR numbers, no SHAs,
+no changelogs — talk about the work like a person) · **formalcode** (automatic
+record of pushes — never chat) · **jobscode** (job announcements) ·
+**newentriescode** (your one flare, §2) · **heartbeatcode** (handled by `pulse`) ·
+**groupchatcode** (one-line collision/cover calls only).
 
 ---
 
