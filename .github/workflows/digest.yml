@@ -36,3 +36,14 @@ jobs:
           git add TOWER.md STATUS.md
           git diff --cached --quiet || git commit -m "digest: refresh TOWER + STATUS [skip ci]"
           git push
+      - name: Tower ping (phone — subscribe once to ntfy `towercode`)
+        if: github.event_name == 'schedule'
+        run: |
+          SUMMARY=$(python3 bin/agency tower --json | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          v=d['verdicts']; z=d.get('zombie_leases',[])
+          line=f\"TOWER {d['now'][11:16]}Z · {v['ALIVE']} alive · {v['STALE']} stale · {v['DEAD']} dead\"
+          if z: line += f\" · 🚨 zombies: {','.join(z)} · action: agency tasks sweep --apply\"
+          print(line)" || true)
+          [ -n "$SUMMARY" ] && curl -d "$SUMMARY" -H "Title: agency tower" https://ntfy.sh/towercode || true
