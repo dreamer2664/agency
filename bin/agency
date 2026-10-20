@@ -155,10 +155,10 @@ def touch_agent(root_, name, now_dt, extra=None):
     return d
 
 def lifecycle(d, now_dt):
-    """ROOKIE / FULL / AGING / RETIRED from joined_ts."""
+    """ROOKIE / FULL / AGING / RETIRED from joined_ts. Unknown age = ROOKIE."""
     joined = parse_ts(d.get("joined_ts"))
     if not joined:
-        return "FULL", 0.0
+        return "ROOKIE", 0.0
     age_h = (now_dt - joined).total_seconds() / 3600
     if age_h < ROOKIE_H:
         return "ROOKIE", age_h
@@ -169,10 +169,10 @@ def lifecycle(d, now_dt):
     return "RETIRED", age_h
 
 def enforce_claim_rights(root_, me, now_dt, need_hours, what):
-    """Lifecycle gate — mechanical, not a wish. Lead/owner are exempt."""
+    """Lifecycle gate — mechanical, not a wish. Lead/owner are exempt.
+    Director-commissioned agents skip the ROOKIE size cap (the Director sends
+    them straight onto big work) but NEVER the AGING/RETIRED clock."""
     d = jload(roster_path(root_, me)) or die(f"'{me}' not on the roster — agency init first")
-    if d.get("role") in ("lead", "owner"):
-        return
     stage, age_h = lifecycle(d, now_dt)
     if stage == "RETIRED":
         die(f"you are RETIRED ({age_h:.0f}h old, limit {RETIRE_H}h) — no new claims. "
@@ -180,6 +180,8 @@ def enforce_claim_rights(root_, me, now_dt, need_hours, what):
     if stage == "AGING":
         die(f"you are AGING ({age_h:.0f}h old ≥ {AGING_H}h) — no new claims. "
             f"finish your current phase and run: bash tools/handoff.sh <id> planned-rotation")
+    if d.get("role") in ("lead", "owner") or d.get("commissioned"):
+        return
     if stage == "ROOKIE" and need_hours > 4:
         die(f"ROOKIE limit: ≤4h work in your first {ROOKIE_H}h (this needs {need_hours:g}h). "
             f"take a small job or review first — a good start is 90% of the work")
@@ -612,7 +614,7 @@ def cmd_jobs(args):
             st = jload(os.path.join(jd, "STATUS.json"), {})
             holders = job_holders(root_, jid, now_dt)
             active = [h for h in holders if not h["expired"]]
-            owner = active[-1]["agent"] if active else (st.get("owner") or "—")
+            owner = "+".join(h["agent"] for h in active) if active else (st.get("owner") or "—")
             status = st.get("status") or ("claimed" if active else "open")
             exp = " ⏰" if any(h["expired"] for h in holders) else ""
             floor = job_total_floor(root_, jid)
@@ -695,18 +697,21 @@ def cmd_jobs(args):
 
     if args.cmd == "claim":
         me = agent_name(args)
+        withs = [w for w in (args.with_names or []) if w != me]
         active = [h for h in job_holders(root_, jid, now_dt) if not h["expired"]]
-        other = [h for h in active if h["agent"] != me]
-        if other:
-            die(f"{jid} is held by {other[-1]['agent']} until {other[-1]['expires']}")
-        if any(h["agent"] == me for h in active):
-            die(f"you already hold {jid}")
+        for h in active:
+            if h["agent"] == me:
+                die(f"you already hold {jid}")
+            their = (jload(os.path.join(jd, f"CLAIM.{h['agent']}.json")) or {}).get("with") or []
+            if not (me in their and h["agent"] in withs):
+                die(f"{jid} is held by {h['agent']} until {h['expires']}"
+                    f" (co-claim is mutual: both partners name each other with --with)")
         need = max(args.hours, job_total_floor(root_, jid))
         enforce_claim_rights(root_, me, now_dt, need, jid)
         exp = now_dt + timedelta(hours=args.hours)
         jsave(os.path.join(jd, f"CLAIM.{me}.json"),
               {"agent": me, "ts": iso(now_dt), "lease_hours": args.hours,
-               "lease_expires": iso(exp), "epoch": EPOCH})
+               "lease_expires": iso(exp), "epoch": EPOCH, "with": withs})
         st = jload(os.path.join(jd, "STATUS.json"), {})
         st.update({"status": "claimed", "owner": me, "phase": st.get("phase", "P1"),
                    "updated_ts": iso(now_dt)})
@@ -1077,6 +1082,8 @@ def main():
     q = s.add_parser("phases"); q.add_argument("id")
     q = s.add_parser("gate"); q.add_argument("id")
     q = s.add_parser("claim"); q.add_argument("id"); q.add_argument("--hours", type=float, default=4)
+    q.add_argument("--with", dest="with_names", nargs="*", default=[],
+                   help="co-claimers (the pair protocol)")
     q = s.add_parser("phase"); q.add_argument("id")
     q.add_argument("action", choices=["start", "close"]); q.add_argument("phase")
     q.add_argument("--note"); q.add_argument("--override", action="store_true")

@@ -70,11 +70,15 @@ def main():
         r = run(repo, "tasks", "claim", "t-y", "--hours", "1", agent="nova", expect="any")
         assert r.returncode != 0 and "RETIRED" in r.stderr
 
-        # lead is exempt from all of it (even at 70h)
-        set_age(repo, "boss", 70)
-        run(repo, "jobs", "release", "t-big", agent="rex")
-        r = run(repo, "jobs", "claim", "t-big", "--hours", "8", agent="boss")
+        # lead skips the ROOKIE size cap …
+        set_age(repo, "boss", 1)
+        r = run(repo, "tasks", "claim", "t-b", "--hours", "5", agent="boss")
         assert "claimed" in r.stdout
+        # … but the clock binds leads too — degradation spares nobody
+        run(repo, "tasks", "release", "t-b", agent="boss")
+        set_age(repo, "boss", 70)
+        r = run(repo, "tasks", "claim", "t-b", "--hours", "1", agent="boss", expect="any")
+        assert r.returncode != 0 and "RETIRED" in r.stderr
 
         print(f"7 assertions ok ({time.time()-t0:.1f}s)", file=sys.stderr)
     finally:
