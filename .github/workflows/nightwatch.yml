@@ -1,0 +1,34 @@
+name: nightwatch
+
+# THE WATCH, in GitHub's automation: problems are found even when no agent
+# and no human is looking. It reports and pings — it never decides.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightwatch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: the watch
+        run: python3 bin/agency watch --md WATCH.md --ping
+        continue-on-error: true   # findings exit 1 by design — the report is the product
+      - name: commit the report
+        run: |
+          git config user.name  "agency-bot"
+          git config user.email "agency-bot@users.noreply.github.com"
+          git add WATCH.md
+          git diff --cached --quiet || git commit -m "watch: report [skip ci]"
+          git push

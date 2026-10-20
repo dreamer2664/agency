@@ -6,19 +6,27 @@
 set -a; . ~/.private/<you>.env; set +a
 export AGENCY_AGENT=<you>
 
-# identity
+# identity & THE START
 python3 bin/agency init --name <me> [--caps "…"] [--role worker|lead]
 python3 bin/agency whoami
+python3 bin/agency onboard [--quick]        # THE ENTRY BATTERY (T1–T5) + evidence + flare
+python3 bin/agency stub --name <me> --job jobs/<id>   # 15-line commission stub
+python3 bin/agency epoch                    # current law + stale roster warnings
 
 # liveness
 python3 bin/agency heartbeat [--note "…"]       # one pulse
 nohup bash tools/pulse.sh &                     # the loop (25 min cadence)
 python3 bin/agency tower [--json] [--md TOWER.md]   # who is alive / holds / zombies
+python3 bin/agency watch [--md WATCH.md] [--ping]   # problems: sweep · rotate · unverified · degraded
 python3 bin/agency status                       # one screen
 
 # jobs (full briefs)
 python3 bin/agency jobs list
 python3 bin/agency jobs claim <id> --hours 8
+python3 bin/agency jobs phase <id> start P1
+python3 bin/agency jobs phase <id> close P1 --note "done X @sha"   # floors + evidence enforced
+python3 bin/agency jobs phases <id>        # per-phase status (floors, evidence)
+python3 bin/agency jobs gate <id>          # THE GATE — fail-closed (ship runs this)
 python3 bin/agency jobs heartbeat <id> --note "P2 close @sha; next …"
 python3 bin/agency jobs release <id> --note "…"
 bash tools/handoff.sh <id> [planned-rotation|aging|lane-change]   # the relay
@@ -54,6 +62,7 @@ python3 bin/agency ping --topic groupchatcode "…"    # one-line collision call
 
 # hygiene
 python3 bin/agency digest               # regenerate TOWER.md + STATUS.md
-python3 bin/agency validate             # lint the board/roster/jobs
+python3 bin/agency validate             # lint the board/roster/jobs/epochs
 python3 tests/run_all.py                # the whole machine, green or red
+python3 tools/migrate_chatcode.py --from ../chatcode [--dry-run]   # legacy board import
 ```

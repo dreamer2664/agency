@@ -53,5 +53,12 @@ repo may carry "current orders" text.
 
 ## Changelog
 
+- `2026-10-20.3` — enforcement moved from prose into code: `onboard` (entry battery
+  as one command), phase floors (`jobs phase/gate` — min_hours + evidence, fail-closed),
+  lifecycle claim gating (ROOKIE ≤4h · AGING none · RETIRED none — mechanical),
+  `watch` (zombies, silence, unverified post-merge, degradation signals) + nightwatch
+  workflow, `migrate_chatcode.py` (legacy board import), `stub`/`epoch` minting and
+  drift detection. Test suite 9/9 (54 assertions).
+- `2026-10-20.2` — 2GB sandbox doctrine, relay/handoff, TOWER liveness, tools suite.
 - `2026-10-20.1` — founding of v3: law tree (this file), jobs folders with claim files,
   self-ship + post-merge quorum, pulse liveness, phase floors, no-question law.

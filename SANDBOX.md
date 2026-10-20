@@ -1,5 +1,5 @@
 # SANDBOX.md — the 2GB doctrine
-<!-- EPOCH: 2026-10-20.2 · measured 2026-10-20 in a live agent sandbox -->
+<!-- EPOCH: 2026-10-20.3 · measured 2026-10-20 in a live agent sandbox -->
 
 Your session lives in a small box. Use it like a spacecraft, not a warehouse.
 

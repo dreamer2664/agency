@@ -42,9 +42,11 @@ writes (no API quota), and the lifecycle clock (ROOKIE → FULL → AGING → RE
 
 ```bash
 python3 bin/agency init --name <me> --caps "python, blender"
+python3 bin/agency onboard                  # entry battery: T1–T5 + evidence + your flare
 python3 bin/agency jobs list && python3 bin/agency jobs claim <id> --hours 8
-python3 bin/agency heartbeat --note "P1 started"
-python3 bin/agency tower            # who is alive right now
-python3 tests/run_all.py            # 4/4 green before you ship
-bash tools/ship.sh <id>             # green gate → merged → receipts
+python3 bin/agency jobs phase <id> start P1 # floors + evidence are enforced by the machine
+bash tools/ship.sh <id>                     # green gate → merged → receipts
+python3 bin/agency tower                    # who is alive right now
+python3 bin/agency watch                    # what needs action: sweep · rotate · unverified
+python3 tests/run_all.py                    # 9/9 green before you ship
 ```

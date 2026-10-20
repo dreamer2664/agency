@@ -28,6 +28,14 @@ def main():
     try:
         run(repo, "init", "--name", "nova")
         run(repo, "init", "--name", "rex")
+        # backdate both to FULL age (30h): this file tests job mechanics, not lifecycle
+        from datetime import datetime, timezone, timedelta
+        full = (datetime.now(timezone.utc) - timedelta(hours=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for n in ("nova", "rex"):
+            p = os.path.join(repo, "agents", f"{n}.json")
+            d = json.load(open(p))
+            d["joined_ts"] = full
+            json.dump(d, open(p, "w"))
 
         r = run(repo, "jobs", "list")
         assert "t-1-blend" in r.stdout

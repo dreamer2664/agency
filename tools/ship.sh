@@ -37,15 +37,10 @@ fi
 
 [ -f SHIP_GATE.md ] || fail "no SHIP_GATE.md in this repo — the repo owner must define the gate first"
 
-# phase gates for jobs: every phase row in PHASES.md must have its evidence
+# phase gates for jobs: THE GATE is mechanical (bin/agency jobs gate)
 JOB_DIR="$(ls -d jobs/"$ID" 2>/dev/null || true)"
-if [ -n "$JOB_DIR" ] && [ -f "$JOB_DIR/PHASES.md" ]; then
-  # every evidence file named in the phase table must exist
-  while read -r ev; do
-    [ -f "$JOB_DIR/$ev" ] || fail "missing phase evidence: $ev (see $JOB_DIR/PHASES.md)"
-  done < <(grep -oE 'evidence/[A-Za-z0-9._/-]+' "$JOB_DIR/PHASES.md" || true)
-  grep -q 'phase close' "$JOB_DIR/HANDOFF.md" 2>/dev/null \
-    || fail "HANDOFF.md has no 'phase close' entries — checkpoint first"
+if [ -n "$JOB_DIR" ]; then
+  python3 bin/agency jobs gate "$ID" || fail "job gate red for $ID (see above: floors, evidence, checkpoints)"
 fi
 
 # ---- 2. THE GATE: run exactly what SHIP_GATE.md lists ---------------------

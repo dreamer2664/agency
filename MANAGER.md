@@ -1,5 +1,5 @@
 # MANAGER.md — the manager seat
-<!-- EPOCH: 2026-10-20.2 · a brand-new agent can hold this clipboard cold -->
+<!-- EPOCH: 2026-10-20.3 · a brand-new agent can hold this clipboard cold -->
 
 The loop you own, forever:
 
