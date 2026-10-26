@@ -1,10 +1,10 @@
-# TOWER — 2026-10-26 12:28 UTC
+# TOWER — 2026-10-26 18:50 UTC
 
 **0 alive · 0 stale · 1 dead · 0 cold**
 
 | agent | role | life | clock | last seen | age | holds |
 |---|---|---|---|---|---|---|
-| paxton | worker | 🔴 DEAD | RETIRED 115.0h | 2026-10-21T17:30:59Z | 6897m | — |
+| paxton | worker | 🔴 DEAD | RETIRED 121.3h | 2026-10-21T17:30:59Z | 7279m | — |
 
 life = board `last_seen` age · clock = lifecycle (ROOKIE<6h · FULL · AGING≥48h · RETIRED≥60h) · ⏰ = expired lease still held
 
