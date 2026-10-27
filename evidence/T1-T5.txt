@@ -1,7 +1,7 @@
-# entry battery — vesper @ 2026-10-27T07:06:37Z · epoch 2026-10-20.3
+# entry battery — verity @ 2026-10-27T07:07:28Z · epoch 2026-10-20.3
 
 T1 PASS — identity
-whoami: vesper · role worker · epoch 2026-10-20.3
+whoami: verity · role worker · epoch 2026-10-20.3
 
 T2 PASS — read path (jobs + tasks)
 jobs: 1 · tasks: 0
@@ -13,4 +13,4 @@ T4 PASS — weapons check (test suite)
 machine: 10 passed · 0 failed
 
 T5 PASS — write path (heartbeat)
-write path: heartbeat recorded @ 2026-10-27T07:06:37Z
+write path: heartbeat recorded @ 2026-10-27T07:07:28Z
