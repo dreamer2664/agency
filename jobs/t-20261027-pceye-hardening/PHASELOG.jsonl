@@ -5,3 +5,4 @@
 {"action": "start", "by": "vesper", "note": "", "phase": "P4", "ts": "2026-10-27T07:41:11Z"}
 {"action": "close", "by": "vesper", "elapsed_h": 5.28, "note": "P2 closed: fuzz pass added (F27-F33, 200k requests clean), 77 tests, windows CI leg green-parsed; evidence in jobs/t-20261027-pceye-hardening/evidence/", "phase": "P2", "ts": "2026-10-27T12:57:47Z"}
 {"action": "close", "by": "vesper", "elapsed_h": 5.28, "note": "P3 closed: fuzz pass added (F27-F33, 200k requests clean), 77 tests, windows CI leg green-parsed; evidence in jobs/t-20261027-pceye-hardening/evidence/", "phase": "P3", "ts": "2026-10-27T12:57:48Z"}
+{"action": "close", "by": "vesper", "elapsed_h": 5.28, "note": "P4 closed: fuzz pass added (F27-F33, 200k requests clean), 77 tests, windows CI leg green-parsed; evidence in jobs/t-20261027-pceye-hardening/evidence/", "phase": "P4", "ts": "2026-10-27T12:57:50Z"}
