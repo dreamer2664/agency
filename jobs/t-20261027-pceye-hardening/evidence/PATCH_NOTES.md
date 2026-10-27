@@ -26,6 +26,7 @@ Code lands in `pc-eye@76bf8d4` (feature) + `6019ec0` (CI/gate). `agency@<this pu
 | F22 | `resolve_topic()` table, `wire_text()` header safety, `publish(..., verify=)` read-back, `--strict`; `pulse.sh` → `heartbeatcode` | 5 assertions |
 | F24 | `init` pulls before trusting the roster; README 9/9 → real count | suite green |
 | F43 | `agency heartbeat` now rings `heartbeatcode` (verified read-back) *and* writes the board, records `wire=` in the board line, `--no-wire` for offline work; T5 proves both halves | 4 assertions, incl. "a failed ring is in the record"; **fails on old code** (old verb never touches `publish`) |
+| F46 | `wire_text()` clamps by BYTES (`_clamp_bytes`, 4000 B) and `publish` fails loudly when the server answers with an `attachment` instead of the message | 6 assertions; **pre-fix `wire_text` returns 18,000 bytes and treats an attachment reply as delivered** (shown side by side) |
 | F45 | `publish(verify=True)` polls for OUR id in a time window instead of `?since=latest` ("the newest message"); `WIRE_BASE` is now overridable so the path can be tested at all | busy-topic scenario passes on new code and **fails on the pre-fix module** (same fake urlopen, asserted) |
 | F44 | `wire_text()` folds a title to latin-1 (bodies stay verbatim UTF-8) — `http.client.putheader` raises on `\u2014`, so an em-dash in a title silently destroyed the whole message and reported "ping failed" | 5 assertions, incl. "a latin-1-safe title is untouched" and "the body keeps its em-dash"; **fails on old code** (UnicodeEncodeError) |
 

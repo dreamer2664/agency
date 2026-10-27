@@ -58,6 +58,44 @@ def main():
         assert "\u2014" in body, "only the HEADER is folded; the body is UTF-8 and must keep its text"
         n += 2
 
+        # ---- unit F46: the wire's limit is BYTES, and an oversize body becomes a FILE silently ----
+        long = "\u2014" * 6000                                  # 18,000 bytes, 6,000 characters
+        msg, _ = cli.wire_text(long, "t")
+        assert len(msg.encode("utf-8")) <= 4096, "the clamp must count bytes, not characters"
+        assert msg.endswith("]") and "bytes dropped" in msg, f"truncation must be visible: {msg[-60:]}"
+        assert "\ufffd" not in msg, "cutting mid-character would put U+FFFD in the crew's message"
+        short, _ = cli.wire_text("plain ascii", "t")
+        assert short == "plain ascii", "a normal message must not be touched"
+        n += 4
+
+        # an attachment reply is a FAILURE, not a success with odd text
+        att = {"hit": False}
+
+        def att_urlopen(req, timeout=None):
+            att["hit"] = True
+
+            class R:
+                def read(self):
+                    return (b'{"id":"A1","attachment":{"url":"https://ntfy.sh/attach/A1/x.txt",'
+                            b'"filename":"attachment.txt"}}')
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *a):
+                    return False
+            return R()
+
+        real = __import__("urllib.request", fromlist=["x"]).urlopen
+        __import__("urllib.request", fromlist=["x"]).urlopen = att_urlopen
+        try:
+            ok_att, det_att = cli.publish("formalcode", "x" * 5000, title="t", verify=True, timeout=1)
+        finally:
+            __import__("urllib.request", fromlist=["x"]).urlopen = real
+        assert ok_att is False, "an attachment reply must not be reported as a delivered message"
+        assert "FILE" in det_att, det_att
+        n += 2
+
         # ---- unit F45: the read-back must look for OUR id, not for "the newest message" ----
         # One fake serves both the new code and the pre-fix module: the POST always answers with an id, and
         # the poll answers `since=latest` with somebody else's message (a busy topic) while `since=<ts>`
