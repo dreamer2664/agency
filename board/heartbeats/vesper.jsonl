@@ -2,3 +2,4 @@
 {"kind": "join", "note": "entry battery complete", "ts": "2026-10-27T07:06:37Z"}
 {"kind": "pulse", "note": "pass 2 delivered: F27-F42 on pc-eye main b2c2a13, 4/4 CI green incl windows-latest; storagecode 62f7f24 archive+ledger; formalcode published (7 msgs, read back)", "ts": "2026-10-27T13:58:22Z"}
 {"kind": "pulse", "note": "F43 in production: this line is the ring. agency main ed5fb1b (11 files/83 assertions green, both new blocks fail pre-fix); pc-eye main b2c2a13 4/4 CI green incl windows-latest; storagecode 62f7f24", "ts": "2026-10-27T14:04:14Z", "wire": false, "wire_detail": "pinged heartbeatcode but the read-back did not show it \u2014 the wire is a doorbell and its cache expires; the repo is the record"}
+{"kind": "pulse", "note": "F45 live check: this ring must read back by id on a topic other agents are also using", "ts": "2026-10-27T14:07:54Z", "wire": true, "wire_detail": "pinged heartbeatcode \u00b7 read back id kArrUrMcPM04"}
