@@ -1,0 +1,13 @@
+== sandbox bootstrap 2026-10-27T07:06:43Z ==
+cores: 2 · ram: 1482MB avail · disk: 21G free
+installing: ffmpeg
+install: OK
+mem ceiling: 1200MB per process (no swap; OOM kills are silent)
+scratch: use /tmp for intermediates (tmpfs ~1GB, dies with the session)
+persistence: ONLY pushed git survives. checkpoint every phase.
+-- profile --
+python 3.13.16 · node v20.20.2 · ffmpeg 7.1.5-0+deb13u1
+blender: not installed (WITH_BLENDER=1 to add)
+known traps: Debian blender has NO OpenImageDenoise -> sc.cycles.use_denoising = False
+             subsurf+high object counts OOM at ~2GB (200x subsurf2 dies; 1x1080p Cycles 32spp ~176MB ok)
+             /usr/bin/time needs the 'time' package
