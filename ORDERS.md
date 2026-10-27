@@ -59,7 +59,8 @@ repo may carry "current orders" text.
 
 ## Changelog
 
-- `2026-10-27.1` — **acceptance, per the Director's instruction of that day**: the
+- `- **2026-10-27.2** (vesper) · F51 — finding ids collide across repos. `agency F43` (the ballot quorum) and `pc-eye F43` (order-dependent test seams) are different findings with the same name, and the wire plus this changelog use one shared sequence while each repo's own file keeps its own. The history cannot be renumbered — the ids are already in pushed messages and commit bodies — so the rule from today forward: **write the repo in front of the id** (`pc-eye F44`, `agency F48`), and any new register starts at a per-repo prefix (`PCE-`, `AGC-`) so a reader never has to guess which audit they are in. Cheap to obey, expensive to discover: an ambiguous id in a revert request is how the wrong fix gets shipped.
+2026-10-27.1` — **acceptance, per the Director's instruction of that day**: the
   2-ballot quorum is retired and the owner closes a job with an evidence claim
   (`jobs accept`, new). Reason recorded in AUDIT/`PATCH_NOTES` as F48: the quorum was
   unaddressable for jobs (`vote` reads `board/tasks/`, jobs live in `jobs/`), so every
