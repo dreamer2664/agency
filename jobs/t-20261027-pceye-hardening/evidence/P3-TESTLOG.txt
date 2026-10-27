@@ -1,0 +1,22 @@
+P3 — test + CI evidence (pc-eye)
+================================
+suite:            32 -> 67 tests, headless, dry-run only (no PC in this session, by Director order)
+$ python3 tests/run_all.py --all   ->  4/4 green (suite, tools/check_docs.py, capture_count, negative_check)
+$ python3 -m unittest discover -s tests  ->  Ran 67 tests ... OK
+
+negative control (the reason to believe the suite):
+$ python3 evidence/negative_check.py
+  old code (bb68297) vs the new RegressionV103 suite: ran 28 - caught 26
+  VERDICT: the regression tests DO catch the flaws they claim to
+  (the 2 that also pass on 1.0.2 are contract pins, not fix pins; both named in the output)
+
+agency side:
+$ python3 tests/run_all.py   ->  11 passed / 0 failed (test_wire_push.py adds 11 assertions)
+$ (against the pre-fix CLI)  ->  AssertionError: branch was never pushed:
+                                fatal: Not a valid object name agent/wires/t-wire
+
+CI, self-inflicted and caught by the process, not by me:
+  efecac... first ci.yml -> GitHub run completed/failure with total_count=0 jobs: the YAML had a
+  `python -c "...assert x: y"` line, the colon broke the parse, so the workflow died before any job
+  existed. Reproduced locally by running the steps verbatim, then fixed by moving all logic to
+  tools/check_docs.py. Second run (6019ec0) executed the matrix, windows-latest included.

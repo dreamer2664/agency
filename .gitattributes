@@ -1,0 +1,11 @@
+# Executable scripts must stay executable, and a shell script must keep LF: a 100644 start script and a CRLF .sh are the two ways a fresh clone breaks silently.
+# (Both happened to this repo through a workspace round-trip; `filemode` keeps the bit honest.)
+# NB: `* text eol=lf` is deliberate for this repo — it has no .bat files; add a per-extension
+#     crlf rule before using this pattern on a repo that does.
+*           text eol=lf
+*.sh        text eol=lf
+*.bat       text eol=crlf
+bin/agency  text eol=lf filemode
+*.py        text eol=lf filemode
+*.json      text eol=lf
+*.md        text eol=lf

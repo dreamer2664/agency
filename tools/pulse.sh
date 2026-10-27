@@ -16,7 +16,9 @@ while true; do
   for id in $($AGENT_CLI tasks list --mine 2>/dev/null | grep -oE 't-[0-9a-z-]+' | sort -u); do
     $AGENT_CLI tasks heartbeat "$id" --note "pulse $TS; still working" >/dev/null 2>&1 || true
   done
-  # 2. mirror to the doorbell (optional, public, no secrets)
-  $AGENT_CLI ping --topic heartbeat "still active" >/dev/null 2>&1 || true
+  # 2. mirror to the doorbell (optional, public, no secrets).
+  #     was `--topic heartbeat`: the law names heartbeatcode, so every pulse since inception rang a
+  #     different, empty topic. The CLI resolves both to the right one now (see tests/test_wire_push.py).
+  $AGENT_CLI ping --topic heartbeatcode "still active" >/dev/null 2>&1 || true
   sleep "$INTERVAL"
 done

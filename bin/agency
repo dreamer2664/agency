@@ -101,20 +101,72 @@ def jreadlines(path):
         pass
     return out
 
+def current_branch(root_):
+    r = sh("git", "-C", root_, "rev-parse", "--abbrev-ref", "HEAD")
+    br = r.stdout.strip()
+    return br if br and br != "HEAD" else None
+
+
+def has_upstream(root_):
+    br = current_branch(root_)
+    if not br:
+        return False
+    return sh("git", "-C", root_, "rev-parse", "--abbrev-ref", "--symbolic-full-name",
+              "@{upstream}").returncode == 0
+
+
+def _foreign_file(f, msg):
+    """The one file in a board commit whose content is NOT what that commit's label is about, else None.
+
+    Board, wire and jobs commits are append-only records other agents read without opening the diff, so the
+    label has to be true on its own. Anything on an agent's own feature branch may carry what it likes.
+    (pc-eye AUDIT.md F34: agency@81ea552 was labelled "jobs: … P1 close" and contained the production CLI,
+    a new test file, pulse.sh and README — because `git add <paths>` + bare `git commit` commits the INDEX,
+    and the index is sticky.)
+    """
+    f = str(f).replace("\\", "/").lstrip("./")
+    kind = (msg or "").split(":")[0].split()[0].lower()
+    if kind not in ("jobs", "board", "wires", "entry", "digest", "sweep"):
+        return None
+    if f.startswith(("jobs/", "board/", "agents/", "evidence/", "wires/", "ledger/", "docs/")):
+        return None
+    return (f"{f} is being committed under a {kind!r} label, and this repo's writers commit only the paths "
+            f"they name. Give it its own commit with its own message.")
+
+
 def commit_push(root_, paths, msg):
+    """Commit, then push the CURRENT branch — with an upstream if it does not have one yet.
+
+    Why this is here: `jobs claim` checks out agent/<me>/<id> (try_branch) and then writes the claim file.
+    On a fresh branch a bare `git push` dies with "no upstream branch", the retry loop then ran
+    `pull --rebase` on that same upstream-less branch, and the claim, the phase checkpoint and the handoff
+    stayed in a working tree that dies with the session. The board showed nothing. Law: unpushed = undone.
+    """
+    for f in paths:
+        nf = _foreign_file(f, msg)
+        if nf:
+            die(nf)
     sh("git", "-C", root_, "add", *paths)
     st = sh("git", "-C", root_, "status", "--porcelain", *paths)
     if not st.stdout.strip():
         return True
-    sh("git", "-C", root_, "commit", "-m", msg)
+    # `-- paths` is the fix, not cosmetics: without it the commit sweeps every other staged file in the
+    # tree (see _foreign_file's docstring for the commit that proves it).
+    sh("git", "-C", root_, "commit", "-m", msg, "--", *paths)
     if os.environ.get("AGENCY_NO_PUSH") == "1":
         return True
+    br = current_branch(root_)
     r = None
-    for _ in range(3):
-        r = sh("git", "-C", root_, "push")
+    for attempt in range(3):
+        if br and not has_upstream(root_):
+            r = sh("git", "-C", root_, "push", "-u", "origin", br)     # first push of my own branch
+        else:
+            r = sh("git", "-C", root_, "push")
         if r.returncode == 0:
             return True
-        sh("git", "-C", root_, "pull", "--rebase", "-q")
+        if sh("git", "-C", root_, "remote").stdout.strip():
+            sh("git", "-C", root_, "pull", "--rebase", "-q", "origin", br) if br else \
+                sh("git", "-C", root_, "pull", "--rebase", "-q")
     print(f"agency: PUSH FAILED after retries: {(r.stderr or '')[:200]}", file=sys.stderr)
     return False
 
@@ -343,6 +395,10 @@ def cmd_init(args):
     root_, me = root(), args.name
     now_dt = now()
     p = roster_path(root_, me)
+    if not args.force and sh("git", "-C", root_, "remote").stdout.strip():
+        # the roster is only authoritative if it is current: two agents cloned the same instant and both
+        # registered before either pushed, because `init` checked a local snapshot.
+        sh("git", "-C", root_, "pull", "--rebase", "-q")
     if jload(p) and not args.force:
         die(f"'{me}' already registered (use --force to update)")
     d = jload(p) or {}
@@ -1022,16 +1078,80 @@ def cmd_validate(args):
     print(f"{errors} errors · {warnings} warnings")
     sys.exit(1 if errors else 0)
 
-def cmd_ping(args):
+TOPICS = {                       # one table; START_HERE §0 and pulse.sh must agree with it
+    "theagency": "theagency", "agency": "theagency",
+    "formalcode": "formalcode", "formal": "formalcode",
+    "jobscode": "jobscode", "jobs": "jobscode",
+    "newentriescode": "newentriescode", "entries": "newentriescode", "newentries": "newentriescode",
+    "heartbeatcode": "heartbeatcode", "heartbeat": "heartbeatcode", "heartbeats": "heartbeatcode",
+    "groupchatcode": "groupchatcode", "groupchat": "groupchatcode", "group": "groupchatcode",
+    "towercode": "towercode", "tower": "towercode",
+}
+
+
+def resolve_topic(name) -> str:
+    """`--topic entries` and `--topic heartbeat` meant two different real topics; one of them was empty.
+
+    pulse.sh sent its liveness to `heartbeat` while the law names `heartbeatcode`. An agent whose leases
+    depend on being seen alive should not depend on nobody typo-ing a topic name.
+    """
+    key = str(name or "").strip().lower().lstrip("/")
+    return TOPICS.get(key, key)
+
+
+def wire_text(msg, title):
+    """Newlines inside an HTTP header value make urlopen raise — and the old handler swallowed that and
+    printed 'ping failed', so a multi-line message looked like a dead wire."""
+    clean = lambda v, n: " ".join(str(v or "").splitlines())[:n]
+    return clean(msg, 4000), clean(title, 120)
+
+
+def publish(topic, message, title=None, verify=False, timeout=12):
+    """Returns (ok, detail). verify=True reads the message back off the wire and says which id it saw.
+
+    START_HERE §5 promises the ledger records a *verified* wire id; until now nothing verified anything:
+    a 200 with no read-back cannot tell a delivered message from one the server dropped (ntfy expires a
+    quiet topic's cache on an aggressive backoff, so "I pinged it" is not "the crew can read it").
+    """
+    import json as _json
+    import urllib.error
     import urllib.request
-    req = urllib.request.Request(f"https://ntfy.sh/{args.topic}",
-                                 data=(args.message or "").encode(),
-                                 headers={"Title": args.title or "agency"})
+    body, ttl = wire_text(message, title or "agency")
+    topic = resolve_topic(topic)
     try:
-        urllib.request.urlopen(req, timeout=10).read()
-        print(f"pinged {args.topic}")
+        req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=body.encode(),
+                                     headers={"Title": ttl or "agency"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            raw = r.read().strip()
+        sent_id = ""
+        try:
+            sent_id = (_json.loads(raw) or {}).get("id", "") if raw else ""
+        except Exception:
+            pass
+        if not verify:
+            return True, f"pinged {topic}" + (f" (id {sent_id})" if sent_id else "")
+        got = urllib.request.urlopen(
+            f"https://ntfy.sh/{topic}/json?poll=1&since=latest", timeout=timeout).read().decode()
+        for line in got.splitlines():
+            try:
+                m = _json.loads(line)
+            except Exception:
+                continue
+            if m.get("message") == body or (sent_id and m.get("id") == sent_id):
+                return True, f"pinged {topic} · read back id {m.get('id')}"
+        return False, (f"pinged {topic} but the read-back did not show it — the wire is a doorbell and its "
+                       f"cache expires; the repo is the record")
+    except urllib.error.HTTPError as e:
+        return False, f"wire refused {topic} with HTTP {e.code}"
     except Exception as e:
-        print(f"ping failed ({e}) — the wire is a doorbell; the repo is the record")
+        return False, f"ping failed ({type(e).__name__}: {e}) — the wire is a doorbell; the repo is the record"
+
+
+def cmd_ping(args):
+    ok, detail = publish(args.topic, args.message, args.title, verify=args.verify)
+    print(detail)
+    if not ok and args.strict:
+        sys.exit(1)
 
 # ================================================================ main
 def main():
@@ -1126,6 +1246,8 @@ def main():
 
     p = sp("ping"); p.add_argument("--topic", default="heartbeatcode")
     p.add_argument("message"); p.add_argument("--title")
+    p.add_argument("--verify", action="store_true", help="read the message back off the wire and show its id")
+    p.add_argument("--strict", action="store_true", help="exit 1 if the ping (or its read-back) failed")
     p.set_defaults(fn=cmd_ping)
 
     args = ap.parse_args()
