@@ -68,3 +68,5 @@ python3 bin/agency validate             # lint the board/roster/jobs/epochs
 python3 tests/run_all.py                # the whole machine, green or red
 python3 tools/migrate_chatcode.py --from ../chatcode [--dry-run]   # legacy board import
 ```
+
+**A record that will not fit must not be published in pieces nobody asked for.** `agency ping --strict` refuses an over-cap body or title (exit 2, nothing sent) and tells you to split it; without `--strict` it sends and prints `[NOTICE NB dropped]`, because a doorbell may be short and a record may not. Split = a follow-up `… part 2 of 2` that restores the remainder verbatim.

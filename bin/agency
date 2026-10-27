@@ -1206,6 +1206,7 @@ HEADER_SAFE = {"\u2014": "-", "\u2013": "-", "\u2212": "-", "\u2026": "...", "\u
                "\u2264": "<=", "\u2248": "~", "\u2713": "ok", "\u2717": "no"}
 
 
+TITLE_MAX_BYTES = 120        # the header budget; F50 keeps its notice on one line
 WIRE_MAX_BYTES = 4000      # ntfy's message limit is 4096 bytes; 4000 leaves room for the notice below
 
 
@@ -1247,7 +1248,7 @@ def wire_text(msg, title):
     was 12 KB and ntfy stored the body as a FILE, publishing "You received a file: attachment.txt" in place of
     the finding. No HTTP error, no truncation — a rewriting.
     """
-    ttl = _clamp(title, 120)
+    ttl = _clamp(title, TITLE_MAX_BYTES)
     ttl = " ".join(ttl.splitlines())          # belt: a header value with a newline is invalid whatever produced it
     try:
         ttl.encode("latin-1")
@@ -1336,8 +1337,34 @@ def publish(topic, message, title=None, verify=False, timeout=12):
         return False, f"ping failed ({type(e).__name__}: {e}) — the wire is a doorbell; the repo is the record"
 
 
+def clamp_loss(message, limit):
+    """How many bytes of `message` the wire cap would drop. 0 means what you wrote is what lands.
+
+    F56: `--strict` used to print "read back id …" for a message whose tail had been cut off *locally*, by
+    our own clamp, before the send. The clamp notice makes the loss visible to whoever reads the record and
+    invisible to the author's exit code — which is the worst of both, because the tool that exists to say
+    "the record is complete" was the one saying it about an incomplete record. A doorbell may be short; a
+    record may not be silently shortened.
+    """
+    return max(0, len((message or "").encode("utf-8")) - limit)
+
+
 def cmd_ping(args):
+    loss_body = clamp_loss(args.message, WIRE_MAX_BYTES)
+    loss_title = clamp_loss(args.title, TITLE_MAX_BYTES) if args.title else 0
+    if args.strict and (loss_body or loss_title):
+        parts = []
+        if loss_body:
+            parts.append(f"body {loss_body}B over the {WIRE_MAX_BYTES}B cap")
+        if loss_title:
+            parts.append(f"title {loss_title}B over the {TITLE_MAX_BYTES}B cap")
+        die("would post a truncated record: " + ", ".join(parts)
+            + " — split it (a follow-up \"… part 2 of 2, ids …\" restores the remainder verbatim, as "
+              "14:1x today did) or shorten it. Nothing was sent.")
     ok, detail = publish(args.topic, args.message, args.title, verify=args.verify)
+    if loss_body or loss_title:
+        detail += (f"  [NOTICE {loss_body + loss_title}B dropped by the cap — the wire copy is NOT your full "
+                   f"text; only use this for a doorbell]")
     print(detail)
     if not ok and args.strict:
         sys.exit(1)

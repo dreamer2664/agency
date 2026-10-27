@@ -308,6 +308,49 @@ def main():
             "a writer accepted a source file inside a 'jobs:' commit — F34 still open"
         n += 1
 
+        # ---- F56: --strict must refuse to publish a record its own clamp shortened ----
+        import argparse
+        import types
+        sent = []
+        real_publish, real_die = cli.publish, cli.die
+        cli.publish = lambda topic, message, title=None, verify=False: (
+            sent.append(message) or (True, f"fake-pinged {topic}"))
+        cli.die = lambda m: (_ for _ in ()).throw(SystemExit(2))
+        try:
+            big = "x" * (cli.WIRE_MAX_BYTES + 200)
+            rc = 0
+            try:
+                cli.cmd_ping(argparse.Namespace(topic="formalcode", message=big, title="t", verify=False,
+                                                strict=True))
+            except SystemExit as e:
+                rc = e.code or 2
+            assert rc != 0, "--strict accepted a body its own clamp was about to cut"
+            assert sent == [], f"--strict sent {len(sent)} message(s) after refusing; nothing must go out"
+            n += 2
+            cli.cmd_ping(argparse.Namespace(topic="formalcode", message=big, title="t", verify=False,
+                                            strict=False))
+            # a non-strict ping still *sends* what was typed (the clamp lives in publish/wire_text, so the
+            # caller sees the raw string) and the loss is reported in the printed line, not swallowed
+            assert len(sent) == 1 and sent[-1] == big, \
+                "a non-strict ping must still hand publish the full text — clamping is publish's business"
+            n += 1
+            rc = 0
+            try:
+                cli.cmd_ping(argparse.Namespace(topic="formalcode", message="short",
+                                                 title="T" * (cli.TITLE_MAX_BYTES + 50), verify=False,
+                                                 strict=True))
+            except SystemExit as e:
+                rc = e.code or 2
+            assert rc != 0, "an over-long TITLE is just as truncated on the wire, and --strict must say so"
+            n += 1
+            assert cli.clamp_loss("abc", 4000) == 0 and cli.clamp_loss("x" * 4001, 4000) == 1, \
+                "clamp_loss counts BYTES (F46's unit), not characters"
+            assert cli.clamp_loss("—" * 100, 200) == 100, \
+                "an em-dash is 3 bytes: 300 typed, 200 allowed, 100 lost"
+            n += 2
+        finally:
+            cli.publish, cli.die = real_publish, real_die
+
         print(f"{n} assertions ok ({time.time()-t0:.1f}s)", file=sys.stderr)
     finally:
         shutil.rmtree(repo, ignore_errors=True)
