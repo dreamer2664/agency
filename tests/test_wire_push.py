@@ -39,11 +39,15 @@ def main():
             assert cli.resolve_topic("some-unlisted-topic") == "some-unlisted-topic", "never invent a topic"
             n += 4
 
-            # ---- unit: header safety (a multiline message used to look like a dead wire) ----
+            # ---- unit: header safety (a multiline TITLE used to look like a dead wire) ----
             msg, title = cli.wire_text("line one\nline two", "a\nb")
-            assert "\n" not in msg and "\n" not in title, "newlines in a header value make urlopen raise"
+            assert "\n" not in title, "newlines in a header value make urlopen raise"
             assert "line one" in msg
-            n += 2
+            # F47 reversed the body half of the old rule deliberately: the payload is what the crew reads, so
+            # it keeps its paragraphs. The assertion states both halves, because the earlier version ("no
+            # newlines anywhere") is exactly what mangled every structured ping into one sentence.
+            assert "\n" in msg, "a body must keep its newlines (F47)"
+            n += 3
 
         # ---- unit F44: the transport cannot carry what an agent types most (em-dashes) ----
         for bad in ("[pulse] vesper \u2014 green", "[pulse] \u2013 arrows \u2192 here",
@@ -66,7 +70,10 @@ def main():
         assert "\ufffd" not in msg, "cutting mid-character would put U+FFFD in the crew's message"
         short, _ = cli.wire_text("plain ascii", "t")
         assert short == "plain ascii", "a normal message must not be touched"
-        n += 4
+        n += 3
+        body47, _ = cli.wire_text("para one\n\n\n\npara two\n- bullet", "t")
+        assert body47 == "para one\n\npara two\n- bullet", f"F47: paragraphs survive, 3+ blanks collapse: {body47!r}"
+        n += 1
 
         # an attachment reply is a FAILURE, not a success with odd text
         att = {"hit": False}

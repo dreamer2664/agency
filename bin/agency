@@ -1139,43 +1139,48 @@ HEADER_SAFE = {"\u2014": "-", "\u2013": "-", "\u2212": "-", "\u2026": "...", "\u
 WIRE_MAX_BYTES = 4000      # ntfy's message limit is 4096 bytes; 4000 leaves room for the notice below
 
 
-def _clamp_bytes(v, n):
-    """Flatten to one line and cut to `n` BYTES, never mid-character. `n` may exceed WIRE_MAX_BYTES only for
-    bodies the caller has already sized; the server's own cap is what the default in publish() enforces."""
-    flat = " ".join(str(v or "").splitlines())
-    limit = min(n, WIRE_MAX_BYTES) if n > WIRE_MAX_BYTES else n
-    raw = flat.encode("utf-8")
-    if len(raw) <= limit:
-        return flat
-    cut = raw[:limit].decode("utf-8", "ignore")            # 'ignore' drops a split multi-byte tail cleanly
+def _clamp(v, n, one_line=True):
+    """Cut to `n` BYTES, never mid-character. `one_line` is for headers; a payload keeps its newlines (F47).
+
+    Two rules that look alike and are not: an HTTP header value must be a single line (a newline there makes
+    urlopen raise — F22), while the message body is what the crew READS, so flattening it turned every
+    structured ping — finding tables, gate lines, "read this first" paragraphs — into one 4,000-character
+    sentence (F47). The clamp belongs to both; the flattening belongs to the header only.
+    """
+    text = str(v or "")
+    if one_line:
+        text = " ".join(text.splitlines())
+    else:
+        text = re.sub(r"\n{3,}", "\n\n", text.strip())
+    raw = text.encode("utf-8")
+    if len(raw) <= n:
+        return text
+    cut = raw[:n].decode("utf-8", "ignore")          # 'ignore' drops a split multi-byte tail cleanly
     dropped = len(raw) - len(cut.encode("utf-8"))
     return cut + f"\n[… {dropped} bytes dropped: the wire caps a message at 4096 BYTES, not characters]"
 
 
 def wire_text(msg, title):
-    """Newlines inside an HTTP header value make urlopen raise — and the old handler swallowed that and
-    printed 'ping failed', so a multi-line message looked like a dead wire.
+    """Prepare (body, title) for the wire: latin-1-safe one-line title, byte-clamped UTF-8 body.
 
-    F44, same class, found live today: `http.client.putheader` does `value.encode("latin-1")`, so an em-dash
-    in a TITLE (not the body — bodies are UTF-8 and never had a problem) raised UnicodeEncodeError *inside*
-    urlopen. Nothing left the process, and `publish` reported "ping failed (UnicodeEncodeError...)", which a
-    reader investigates as a wire outage. I lost a formalcode message that way and only found it by reading the
-    traceback. So: fold the title to what the transport can carry, and keep the body verbatim.
+    F44: `http.client.putheader` does `value.encode("latin-1")`, so an em-dash in a TITLE raised
+    UnicodeEncodeError *inside* urlopen — nothing was published, and `publish` said "ping failed
+    (UnicodeEncodeError)", which reads as a wire outage. The same character in the BODY is fine (UTF-8
+    payload), and that asymmetry is why nobody guesses it. Titles fold through a small table so the record
+    still reads like the author's punctuation; bodies stay verbatim.
+
+    F46: the server's limit is 4096 BYTES and the old `[:4000]` counted characters, so a message of em-dashes
+    was 12 KB and ntfy stored the body as a FILE, publishing "You received a file: attachment.txt" in place of
+    the finding. No HTTP error, no truncation — a rewriting.
     """
-    # F46: the server's limit is 4096 BYTES and `[:4000]` counts characters. A long message of em-dashes,
-    # arrows or any CJK text is 3 bytes a character, so the CLI's own safety margin could be 12 KB and the
-    # server then does something far worse than rejecting it: it stores the body as a FILE and publishes the
-    # placeholder "You received a file: attachment.txt". The ping looks successful, the read-back of a busy
-    # topic may even find that placeholder, and the crew reads a shrug instead of the finding.
-    clean = _clamp_bytes
-    ttl = clean(title, 120)
+    ttl = _clamp(title, 120)
     try:
         ttl.encode("latin-1")
     except UnicodeEncodeError:
         for k, v in HEADER_SAFE.items():
             ttl = ttl.replace(k, v)
         ttl = ttl.encode("latin-1", "replace").decode("latin-1")
-    return clean(msg, 4000), ttl
+    return _clamp(msg, WIRE_MAX_BYTES, one_line=False), ttl
 
 
 # Overridable so the publish path can be tested without a network. There was no way to point it at a fake
