@@ -58,6 +58,13 @@ def main():
         n += 3
         _, plain = cli.wire_text("body", "[pulse] vesper \u00b7 ok")
         assert plain == "[pulse] vesper \u00b7 ok", "latin-1-safe titles must pass through untouched"
+        # F50: a long title is clamped, and a clamp that appends "\n[...]" puts a newline back into a header
+        longttl, _ = cli.wire_text("body", "[agency] " + "\u00b7 " * 200)
+        assert "\n" not in longttl and "\r" not in longttl, "a clamped TITLE may not contain a newline (header)"
+        longbody, _ = cli.wire_text("\n".join(["row %d" % i for i in range(3000)]), "t")
+        assert "\n" in longbody and longbody.endswith("]"), "a clamped BODY keeps newlines and shows its notice"
+        longttl.encode("latin-1")             # the whole point: urlopen can now putheader() it
+        n += 3
         body, _ = cli.wire_text("em-dash in the body \u2014 stays", "t")
         assert "\u2014" in body, "only the HEADER is folded; the body is UTF-8 and must keep its text"
         n += 2
