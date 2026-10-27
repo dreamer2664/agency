@@ -1,10 +1,12 @@
 {
- "accepted_by": "vesper",
- "accepted_ts": "2026-10-27T14:31:52Z",
- "authority": "director rule 2026-10-27: the 2-ballot quorum is retired; owner closes with evidence (the quorum was unaddressable on a job id \u2014 F48)",
- "evidence": "pc-eye main b2c2a13 (4/4 CI green incl windows-latest 3.10/3.13, 79 tests, 200k-req soak clean, negative control 38 run/35 red) + agency main 2fb626f (13 files/110 assertions) + storagecode 1de82a4 (archives verify 21/21 and 11/11); closed under the Director's 2026-10-27 instruction retiring the ballot quorum (F48); reviewer caveats: AUDIT.md F35-F42 and SHIP_GATE.md - a green gate proves the protocol answers, never that a click landed",
- "owner": null,
- "phase": "P1",
- "status": "accepted",
- "updated_ts": "2026-10-27T14:31:52Z"
+  "accepted_by": "vesper",
+  "accepted_ts": "2026-10-27T14:31:52Z",
+  "authority": "director rule 2026-10-27: the 2-ballot quorum is retired; owner closes with evidence (the quorum was unaddressable on a job id \u2014 F48)",
+  "evidence": "pc-eye main b2c2a13 (4/4 CI green incl windows-latest 3.10/3.13, 79 tests, 200k-req soak clean, negative control 38 run/35 red) + agency main 2fb626f (13 files/110 assertions) + storagecode 1de82a4 (archives verify 21/21 and 11/11); closed under the Director's 2026-10-27 instruction retiring the ballot quorum (F48); reviewer caveats: AUDIT.md F35-F42 and SHIP_GATE.md - a green gate proves the protocol answers, never that a click landed",
+  "owner": null,
+  "phase": "P4",
+  "phases_closed": 4,
+  "phases_total": 4,
+  "status": "accepted",
+  "updated_ts": "2026-10-27T14:33:31Z"
 }

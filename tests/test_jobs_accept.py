@@ -53,14 +53,27 @@ def main():
         assert st["status"] == "claimed", "a refused close must not change state"
         n += 1
 
+        # a real PHASES.md + the append-only PHASELOG the CLI writes, so the close-out can derive its own
+        # phase state instead of trusting a field left behind by the last claim
+        open(os.path.join(repo, "jobs/t-9-work/PHASES.md"), "w").write(
+            "| phase | deliverable | required evidence | min_hours |\n|---|---|---|---|\n"
+            "| P1 | a | `evidence/P1.md` | 0 |\n| P2 | b | `evidence/P2.md` | 0 |\n"
+            "| P3 | c | `evidence/P3.md` | 0 |\n")
+        with open(os.path.join(repo, "jobs/t-9-work/PHASELOG.jsonl"), "w") as f:
+            for ph, act in (("P1", "start"), ("P1", "close"), ("P2", "start"), ("P2", "close")):
+                f.write(json.dumps({"ts": "2026-10-27T14:00:00Z", "by": "nova", "phase": ph,
+                                    "action": act, "note": ""}) + "\n")
         r = run(repo, "jobs", "accept", "t-9-work",
-                "--reason", "deadbeef1234 + 93 assertions, 11 files, gate green")
+                "--reason", "deadbeef1234 + 110 assertions, 13 files, gate green")
         assert "accepted t-9-work" in r.stdout, r.stdout
         assert "retired" in r.stdout, "the tool should say the rule changed, not silently comply"
         st = json.load(open(os.path.join(repo, "jobs/t-9-work/STATUS.json")))
         assert st["status"] == "accepted" and st["owner"] is None, st
         assert st["accepted_by"] == "nova" and "deadbeef1234" in st["evidence"], st
         assert "director" in st["authority"], "the authority for the waiver must be on the record"
+        assert st["phase"] == "P2" and st["phases_closed"] == 2 and st["phases_total"] == 3, \
+            f"the close-out must reflect the phase log, not the stale claim pointer: {st}"
+        n += 1
         hand = open(os.path.join(repo, "jobs/t-9-work/HANDOFF.md")).read()
         assert "accepted · deadbeef1234" in hand, hand
         n += 5
