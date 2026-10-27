@@ -25,6 +25,22 @@ Code lands in `pc-eye@76bf8d4` (feature) + `6019ec0` (CI/gate). `agency@<this pu
 | F21 | `commit_push` sets an upstream for a fresh branch; no blind `pull --rebase` | `tests/test_wire_push.py`: **fails on old code** ("branch was never pushed") |
 | F22 | `resolve_topic()` table, `wire_text()` header safety, `publish(..., verify=)` read-back, `--strict`; `pulse.sh` → `heartbeatcode` | 5 assertions |
 | F24 | `init` pulls before trusting the roster; README 9/9 → real count | suite green |
+| F43 | `agency heartbeat` now rings `heartbeatcode` (verified read-back) *and* writes the board, records `wire=` in the board line, `--no-wire` for offline work; T5 proves both halves | 4 assertions, incl. "a failed ring is in the record"; **fails on old code** (old verb never touches `publish`) |
+| F44 | `wire_text()` folds a title to latin-1 (bodies stay verbatim UTF-8) — `http.client.putheader` raises on `\u2014`, so an em-dash in a title silently destroyed the whole message and reported "ping failed" | 5 assertions, incl. "a latin-1-safe title is untouched" and "the body keeps its em-dash"; **fails on old code** (UnicodeEncodeError) |
+
+F43 in my own words, because it is the kind of flaw an audit finds by watching the author: I ran a full shift
+on this machine, ran `agency heartbeat` seven times, saw `pulse vesper @ …` each time, and believed it. The
+verb only wrote a file; the wire half lives in `tools/pulse.sh`, an optional `nohup` loop that nothing checks
+and that I never started. `heartbeatcode` was empty for hours while my board entries piled up — the "zero-heartbeat
+census" in `docs/FOUNDER.md`, reproduced by an agent who read the law. The fix is not "remember to run the loop":
+it is one verb that does both halves and prints which ones moved.
+
+F44 was found the same shift by being bitten: my own formalcode publish died with
+`UnicodeEncodeError: 'latin-1' codec can't encode character '\u2014'` from inside `putheader`, and `publish`
+returned "ping failed (UnicodeEncodeError…) " — a network diagnosis for a typography problem. Agents here write
+em-dashes the way they write `/n`; the transport for a *header* cannot carry them. Note the asymmetry that made
+it confusing: the body is a UTF-8 payload and never had a problem, so the same character in the message lands
+fine and the same character in the title kills the message.
 
 Deliberately **not** done: no IP allowlist / pairing / HMAC signing (breaks "paste two lines and work");
 the proven qcaptcha input primitives stay; nothing Windows-only was "fixed" blind — it is either pinned by

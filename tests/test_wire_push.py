@@ -7,6 +7,7 @@ stayed in a working tree that no one can read. And `ping` printed "pinged <topic
 never inspected, while pulse.sh was ringing a topic the law does not name. A doorbell nobody verifies is
 a rumour machine; these tests pin both.
 """
+import json
 import os, shutil, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -44,6 +45,19 @@ def main():
             assert "line one" in msg
             n += 2
 
+        # ---- unit F44: the transport cannot carry what an agent types most (em-dashes) ----
+        for bad in ("[pulse] vesper \u2014 green", "[pulse] \u2013 arrows \u2192 here",
+                    "[pulse] \u201cquoted\u201d \u2026"):
+            _, ttl = cli.wire_text("body", bad)
+            ttl.encode("latin-1")                       # would raise UnicodeEncodeError before the fix
+            assert "\u2014" not in ttl and "\u2013" not in ttl and "\u201c" not in ttl
+        n += 3
+        _, plain = cli.wire_text("body", "[pulse] vesper \u00b7 ok")
+        assert plain == "[pulse] vesper \u00b7 ok", "latin-1-safe titles must pass through untouched"
+        body, _ = cli.wire_text("em-dash in the body \u2014 stays", "t")
+        assert "\u2014" in body, "only the HEADER is folded; the body is UTF-8 and must keep its text"
+        n += 2
+
         # ---- integration: push to a real remote on a branch that has no upstream ----
         bare = tempfile.mkdtemp(prefix="agency-remote-")
         subprocess.run(["git", "init", "-q", "--bare", bare], check=True, capture_output=True)
@@ -68,6 +82,47 @@ def main():
             return r
 
         run("init", "--name", "wires", "--caps", "testing")
+
+        # ---- unit F43: `heartbeat` must ring the wire it prints about, and record the outcome ----
+        seen = {}
+
+        def fake_publish(topic, message, title=None, verify=False, timeout=None, **kw):
+            seen.update(topic=topic, message=message, title=title, verify=verify)
+            return True, "pinged heartbeatcode \u00b7 read back id TESTID"
+
+        real_publish, real_push = cli.publish, cli.commit_push
+        cli.publish, cli.commit_push = fake_publish, lambda *a, **k: None
+        try:
+            os.environ["AGENCY_DIR"] = repo
+            os.environ["AGENCY_AGENT"] = "wires"
+            import argparse
+            # SystemExit from an in-process call would otherwise end the file with exit code 0 and a test
+            # that verified nothing at all — which is the failure mode this whole repo exists to catch.
+            try:
+                cli.cmd_heartbeat(argparse.Namespace(agent="wires", note="still working", kind="pulse",
+                                                     no_wire=False))
+            except SystemExit as e:
+                raise AssertionError(f"cmd_heartbeat exited instead of running: {e}")
+        finally:
+            cli.publish, cli.commit_push = real_publish, real_push
+        assert seen.get("topic") == "heartbeatcode", f"heartbeat must ring the topic the law names, saw {seen}"
+        assert seen.get("verify") is True, "a pulse that is not read back is a rumour (see F22)"
+        hb = [json.loads(l) for l in open(os.path.join(repo, "board", "heartbeats", "wires.jsonl"))
+              if l.strip()]
+        assert hb and hb[-1].get("wire") is True, "the board line must record that the doorbell moved"
+        cli.publish = lambda *a, **k: (False, "wire refused heartbeatcode with HTTP 500")
+        try:
+            try:
+                cli.cmd_heartbeat(argparse.Namespace(agent="wires", note="x", kind="pulse", no_wire=False))
+            except SystemExit as e:
+                raise AssertionError(f"cmd_heartbeat exited instead of running: {e}")
+        finally:
+            cli.publish = real_publish
+        hb = [json.loads(l) for l in open(os.path.join(repo, "board", "heartbeats", "wires.jsonl"))
+              if l.strip()]
+        assert hb[-1].get("wire") is False, "a failed ring must be in the record, not only on stdout"
+        n += 4
+
         os.makedirs(os.path.join(repo, "jobs", "t-wire"), exist_ok=True)
         open(os.path.join(repo, "jobs", "t-wire", "BRIEF.md"), "w").write("# brief\n")
         open(os.path.join(repo, "jobs", "t-wire", "PHASES.md"), "w").write(

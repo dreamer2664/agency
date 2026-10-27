@@ -437,14 +437,38 @@ def cmd_epoch(args):
         print("  roster is current")
 
 def cmd_heartbeat(args):
+    """Record liveness where liveness is *read*: the board (the durable ledger) and heartbeatcode (the
+    doorbell the Director and the other agents actually watch).
+
+    F43. This function used to do the board write and then print `pulse {me} @ ...` — "pulse" being the word
+    the wire loop uses — while never touching the wire at all. The wire was `tools/pulse.sh`'s job, a nohup
+    loop an agent must remember to start, and nothing anywhere checked that it was running. I worked a full
+    shift on that assumption: seven board writes, a printed "pulse" each time, and zero messages on
+    heartbeatcode — an agent that looks alive in the repo and dead to the crew, which is exactly the failure
+    docs/FOUNDER.md calls "the zero-heartbeat census". One verb that does both is the fix; a mandatory second
+    process that nobody verifies is not.
+
+    The ring is best-effort by design: a doorbell that is down must not fail the job it is reporting on. But
+    it is never silent — the outcome goes into the board line and the printed line, so a missing pulse is
+    visible in the record rather than being something you find out about during an audit.
+    """
     root_, me = root(), agent_name(args)
     now_dt = now()
+    note = args.note or "still working"
     touch_agent(root_, me, now_dt)
+    ok, detail = (False, "wire skipped (--no-wire)")
+    if not getattr(args, "no_wire", False):
+        ok, detail = publish("heartbeatcode", f"{me} · {note}", title=f"[pulse] {me}",
+                             verify=True, timeout=8)
     jappend(os.path.join(root_, "board", "heartbeats", f"{me}.jsonl"),
-            {"ts": iso(now_dt), "kind": args.kind, "note": args.note or "still working"})
+            {"ts": iso(now_dt), "kind": args.kind, "note": note, "wire": bool(ok), "wire_detail": detail})
     commit_push(root_, [f"agents/{me}.json", f"board/heartbeats/{me}.jsonl"],
-                f"pulse: {me}")
-    print(f"pulse {me} @ {iso(now_dt)}")
+                f"pulse: {me}" + ("" if ok else " (board only)"))
+    print(f"heartbeat {me} @ {iso(now_dt)} · board=written · {detail}")
+    if not ok:
+        print("  NOTE the doorbell did not move. The board write still counts as a heartbeat by the law "
+              "(any board write is one), but the crew watching heartbeatcode sees nothing. If the wire is "
+              "simply unreachable, start `nohup ./tools/pulse.sh &` when it returns.")
 
 def cmd_onboard(args):
     """THE START. The Five Trials as one command. A good start is 90% of the work."""
@@ -493,10 +517,15 @@ def cmd_onboard(args):
         return f"machine: {tail}"
 
     def t5():
+        # The trial is called "write path", so it proves both writes, not one: the board line AND a pulse the
+        # crew can read. A new agent learns here — at entry, while it still costs nothing — whether the wire is
+        # reachable from this machine at all. Offline is recorded, not failed: entry must not depend on ntfy.
+        ok, detail = publish("heartbeatcode", f"{me} · entry battery (T5)", title=f"[entry] {me}",
+                             verify=True, timeout=8)
         jappend(os.path.join(root_, "board", "heartbeats", f"{me}.jsonl"),
-                {"ts": iso(now_dt), "kind": "join", "note": "entry battery complete"})
+                {"ts": iso(now_dt), "kind": "join", "note": f"entry battery complete · wire={detail}"})
         touch_agent(root_, me, now_dt)
-        return f"write path: heartbeat recorded @ {iso(now_dt)}"
+        return f"write path: heartbeat recorded @ {iso(now_dt)} · {detail}"
 
     trial("T1", "identity", t1)
     trial("T2", "read path (jobs + tasks)", t2)
@@ -1099,11 +1128,33 @@ def resolve_topic(name) -> str:
     return TOPICS.get(key, key)
 
 
+# The characters an agent types constantly that latin-1 cannot represent, in the order they show up in prose.
+# A table rather than a blanket transliteration because '?' in a title reads like damage and '-' reads like
+# the author's own dash.
+HEADER_SAFE = {"\u2014": "-", "\u2013": "-", "\u2212": "-", "\u2026": "...", "\u2018": "'", "\u2019": "'",
+               "\u201c": '"', "\u201d": '"', "\u2192": "->", "\u2190": "<-", "\u00d7": "x", "\u2265": ">=",
+               "\u2264": "<=", "\u2248": "~", "\u2713": "ok", "\u2717": "no"}
+
+
 def wire_text(msg, title):
     """Newlines inside an HTTP header value make urlopen raise — and the old handler swallowed that and
-    printed 'ping failed', so a multi-line message looked like a dead wire."""
+    printed 'ping failed', so a multi-line message looked like a dead wire.
+
+    F44, same class, found live today: `http.client.putheader` does `value.encode("latin-1")`, so an em-dash
+    in a TITLE (not the body — bodies are UTF-8 and never had a problem) raised UnicodeEncodeError *inside*
+    urlopen. Nothing left the process, and `publish` reported "ping failed (UnicodeEncodeError...)", which a
+    reader investigates as a wire outage. I lost a formalcode message that way and only found it by reading the
+    traceback. So: fold the title to what the transport can carry, and keep the body verbatim.
+    """
     clean = lambda v, n: " ".join(str(v or "").splitlines())[:n]
-    return clean(msg, 4000), clean(title, 120)
+    ttl = clean(title, 120)
+    try:
+        ttl.encode("latin-1")
+    except UnicodeEncodeError:
+        for k, v in HEADER_SAFE.items():
+            ttl = ttl.replace(k, v)
+        ttl = ttl.encode("latin-1", "replace").decode("latin-1")
+    return clean(msg, 4000), ttl
 
 
 def publish(topic, message, title=None, verify=False, timeout=12):
@@ -1186,6 +1237,8 @@ def main():
 
     p = sp("heartbeat")
     p.add_argument("--note"); p.add_argument("--kind", default="pulse")
+    p.add_argument("--no-wire", action="store_true",
+                   help="board only: for tests, offline work, or a run where the doorbell is not yours to ring")
     p.set_defaults(fn=cmd_heartbeat)
 
     p = sp("tasks")
