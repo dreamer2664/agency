@@ -22,7 +22,7 @@ Env:
   AGENCY_DIR      repo root (default: git rev-parse --show-toplevel)
   AGENCY_NO_PUSH  1 = commit but never push (tests)
 """
-import argparse, glob, json, os, re, shutil, subprocess, sys
+import argparse, glob, json, os, re, shutil, subprocess, sys, time
 from datetime import datetime, timezone, timedelta
 
 EPOCH = "2026-10-20.3"
@@ -1157,20 +1157,39 @@ def wire_text(msg, title):
     return clean(msg, 4000), ttl
 
 
+# Overridable so the publish path can be tested without a network. There was no way to point it at a fake
+# before, which is exactly why the read-back bug below survived the test written for it (F22): a check that
+# cannot be aimed at a substitute can only ever be run against production, so it gets run rarely, or never.
+WIRE_BASE = os.environ.get("AGENCY_WIRE_BASE", "https://ntfy.sh").rstrip("/")
+
+
 def publish(topic, message, title=None, verify=False, timeout=12):
     """Returns (ok, detail). verify=True reads the message back off the wire and says which id it saw.
 
     START_HERE §5 promises the ledger records a *verified* wire id; until now nothing verified anything:
     a 200 with no read-back cannot tell a delivered message from one the server dropped (ntfy expires a
     quiet topic's cache on an aggressive backoff, so "I pinged it" is not "the crew can read it").
+
+    F45, found by this function lying about a message that HAD arrived. It polled `?since=latest`, which is
+    the newest message on the topic, and compared that to mine. On an idle topic the newest message is mine;
+    on a busy one it is whoever spoke last — `heartbeatcode` had another agent's entry pulses landing between
+    my POST and my GET, so `agency heartbeat` reported "the read-back did not show it" for a message that was
+    on the wire the whole time (I confirmed the id by hand: 75wU6WqAE6Gg). A verification that can only pass
+    when nobody else is talking is not verification, it is a load-dependent alarm; and its first false alarm
+    was against the one verb whose job is to prove I am alive.
+
+    Now: search for OUR id in a bounded window from the post time, retrying briefly for propagation; and keep
+    the two failure modes apart in the wording, because "the wire refused" and "accepted, not in the poll
+    window" call for different actions.
     """
     import json as _json
     import urllib.error
     import urllib.request
     body, ttl = wire_text(message, title or "agency")
     topic = resolve_topic(topic)
+    posted = int(time.time()) - 2                      # ntfy's clock is whole seconds; keep 2 s of skew room
     try:
-        req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=body.encode(),
+        req = urllib.request.Request(f"{WIRE_BASE}/{topic}", data=body.encode(),
                                      headers={"Title": ttl or "agency"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             raw = r.read().strip()
@@ -1179,19 +1198,33 @@ def publish(topic, message, title=None, verify=False, timeout=12):
             sent_id = (_json.loads(raw) or {}).get("id", "") if raw else ""
         except Exception:
             pass
+        if not sent_id:
+            return False, (f"published to {topic} with no id in the reply — cannot claim a delivery I cannot "
+                           f"name; ntfy always answers with one")
         if not verify:
-            return True, f"pinged {topic}" + (f" (id {sent_id})" if sent_id else "")
-        got = urllib.request.urlopen(
-            f"https://ntfy.sh/{topic}/json?poll=1&since=latest", timeout=timeout).read().decode()
-        for line in got.splitlines():
+            return True, f"pinged {topic} (id {sent_id})"
+        deadline = time.time() + min(10.0, max(3.0, float(timeout)))
+        scanned = 0
+        while True:
             try:
-                m = _json.loads(line)
-            except Exception:
-                continue
-            if m.get("message") == body or (sent_id and m.get("id") == sent_id):
-                return True, f"pinged {topic} · read back id {m.get('id')}"
-        return False, (f"pinged {topic} but the read-back did not show it — the wire is a doorbell and its "
-                       f"cache expires; the repo is the record")
+                got = urllib.request.urlopen(f"{WIRE_BASE}/{topic}/json?poll=1&since={posted}",
+                                             timeout=timeout).read().decode()
+            except Exception as e:
+                return False, (f"pinged {topic} (id {sent_id}) · the poll itself failed ({type(e).__name__}: "
+                               f"{e}); the POST was accepted, so the server has it even if I cannot read it back")
+            for line in got.splitlines():
+                try:
+                    m = _json.loads(line)
+                except Exception:
+                    continue
+                scanned += 1
+                if m.get("id") == sent_id or m.get("message") == body:
+                    return True, f"pinged {topic} · read back id {m.get('id')}"
+            if time.time() >= deadline:
+                return False, (f"pinged {topic} (id {sent_id}) · accepted by the server but not in the cache "
+                               f"window ({scanned} message(s) since {posted}); a busy topic's cache expires on "
+                               f"an aggressive backoff — the repo is the record")
+            time.sleep(0.4)
     except urllib.error.HTTPError as e:
         return False, f"wire refused {topic} with HTTP {e.code}"
     except Exception as e:

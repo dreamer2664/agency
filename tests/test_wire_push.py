@@ -58,6 +58,70 @@ def main():
         assert "\u2014" in body, "only the HEADER is folded; the body is UTF-8 and must keep its text"
         n += 2
 
+        # ---- unit F45: the read-back must look for OUR id, not for "the newest message" ----
+        # One fake serves both the new code and the pre-fix module: the POST always answers with an id, and
+        # the poll answers `since=latest` with somebody else's message (a busy topic) while `since=<ts>`
+        # returns the window that contains ours. So the old code cannot pass and the new code must.
+        import io
+        import urllib.request as _ur
+
+        def run_publish(mod):
+            state = {"body": "", "urls": []}
+
+            class _Resp:
+                def __init__(self, payload):
+                    self._p = payload
+
+                def read(self):
+                    return self._p
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *a):
+                    return False
+
+            def fake(req, timeout=None):
+                url = getattr(req, "full_url", str(req))
+                state["urls"].append(url)
+                if "/json?" in url:
+                    mine = json.dumps({"id": "MINE123", "topic": "heartbeatcode",
+                                       "message": state["body"]}).encode()
+                    other = json.dumps({"id": "OTHER9", "topic": "heartbeatcode",
+                                        "message": "fledge \u00b7 entry battery (T5)"}).encode()
+                    if "since=latest" in url:
+                        return _Resp(other + b"\n")          # the newest message is not mine
+                    return _Resp(other + b"\n" + mine + b"\n")
+                state["body"] = req.data.decode()
+                return _Resp(b'{"id":"MINE123"}')
+
+            real = _ur.urlopen
+            _ur.urlopen = fake
+            try:
+                ok, detail = mod.publish("heartbeat", "vesper \u00b7 still working", title="[pulse] vesper",
+                                         verify=True, timeout=1)
+            finally:
+                _ur.urlopen = real
+            return ok, detail, state
+
+        ok_new, det_new, urls_new = run_publish(cli)
+        assert ok_new is True, f"the fixed read-back still fails on a busy topic: {det_new}"
+        assert "MINE123" in det_new, det_new
+        assert not any("since=latest" in u for u in urls_new["urls"]), \
+            "polling since=latest is the bug: it asks for the newest message, not for ours"
+        n += 3
+
+        old_cli_path = os.environ.get("AGENCY_OLD_CLI")
+        if old_cli_path and os.path.exists(old_cli_path):
+            import importlib.machinery as _mf
+            ld = _mf.SourceFileLoader("agency_old", old_cli_path)
+            old = importlib.util.module_from_spec(importlib.util.spec_from_loader("agency_old", ld))
+            ld.exec_module(old)
+            ok_old, det_old, _ = run_publish(old)
+            assert ok_old is False, ("the pre-fix read-back passed the busy-topic scenario, so this test "
+                                     f"proves nothing (got {det_old})")
+            n += 1
+
         # ---- integration: push to a real remote on a branch that has no upstream ----
         bare = tempfile.mkdtemp(prefix="agency-remote-")
         subprocess.run(["git", "init", "-q", "--bare", bare], check=True, capture_output=True)
