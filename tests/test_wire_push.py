@@ -106,6 +106,37 @@ def main():
             assert r.returncode == 0, "without --strict the doorbell must never break a ship"
             n += 2
 
+        # ---- F34: a board commit may carry ONLY the paths its label names ----
+        # agency@81ea552 was labelled "jobs: t-… P1 close" and contained bin/agency, a new test, pulse.sh
+        # and README. Root cause: `git add <paths>` followed by a BARE `git commit` commits the index, and
+        # one earlier `git add -A` — by a human mid-fix, exactly as happened here — is enough. Two
+        # assertions: the commit stays narrow, and a writer that tries to smuggle source refuses.
+        os.makedirs(os.path.join(repo, "jobs", "t-wire", "evidence"), exist_ok=True)
+        open(os.path.join(repo, "jobs", "t-wire", "PHASELOG.jsonl"), "a").write(
+            ' {"ts":"now","by":"wires","phase":"P1","action":"evidence"}\n')
+        open(os.path.join(repo, "README"), "a").write("staged by a human mid-fix\n")
+        open(os.path.join(repo, "bin", "agency"), "a").write("# edited in the same sweep\n") \
+            if os.path.exists(os.path.join(repo, "bin", "agency")) else None
+        subprocess.run(["git", "-C", repo, "add", "-A"], check=True, capture_output=True)
+        r = cli.commit_push(repo, ["jobs/t-wire/PHASELOG.jsonl"], "jobs: t-wire P1 evidence by wires")
+        files = subprocess.run(["git", "-C", repo, "show", "--name-only", "--pretty=format:", "HEAD"],
+                              capture_output=True, text=True).stdout.split()
+        assert files == ["jobs/t-wire/PHASELOG.jsonl"], \
+            f"a jobs commit swept in other staged files: {files}"
+        n += 1
+
+        refused = {}
+        real_die, cli.die = (cli.die, lambda m: refused.setdefault("m", m) or sys.exit(2))
+        try:
+            cli.commit_push(repo, ["jobs/t-wire/HANDOFF.md", "README"], "jobs: t-wire P1 by wires")
+        except SystemExit:
+            pass
+        finally:
+            cli.die = real_die
+        assert "README" in refused.get("m", ""), \
+            "a writer accepted a source file inside a 'jobs:' commit — F34 still open"
+        n += 1
+
         print(f"{n} assertions ok ({time.time()-t0:.1f}s)", file=sys.stderr)
     finally:
         shutil.rmtree(repo, ignore_errors=True)

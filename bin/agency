@@ -115,6 +115,25 @@ def has_upstream(root_):
               "@{upstream}").returncode == 0
 
 
+def _foreign_file(f, msg):
+    """The one file in a board commit whose content is NOT what that commit's label is about, else None.
+
+    Board, wire and jobs commits are append-only records other agents read without opening the diff, so the
+    label has to be true on its own. Anything on an agent's own feature branch may carry what it likes.
+    (pc-eye AUDIT.md F34: agency@81ea552 was labelled "jobs: … P1 close" and contained the production CLI,
+    a new test file, pulse.sh and README — because `git add <paths>` + bare `git commit` commits the INDEX,
+    and the index is sticky.)
+    """
+    f = str(f).replace("\\", "/").lstrip("./")
+    kind = (msg or "").split(":")[0].split()[0].lower()
+    if kind not in ("jobs", "board", "wires", "entry", "digest", "sweep"):
+        return None
+    if f.startswith(("jobs/", "board/", "agents/", "evidence/", "wires/", "ledger/", "docs/")):
+        return None
+    return (f"{f} is being committed under a {kind!r} label, and this repo's writers commit only the paths "
+            f"they name. Give it its own commit with its own message.")
+
+
 def commit_push(root_, paths, msg):
     """Commit, then push the CURRENT branch — with an upstream if it does not have one yet.
 
@@ -123,11 +142,17 @@ def commit_push(root_, paths, msg):
     `pull --rebase` on that same upstream-less branch, and the claim, the phase checkpoint and the handoff
     stayed in a working tree that dies with the session. The board showed nothing. Law: unpushed = undone.
     """
+    for f in paths:
+        nf = _foreign_file(f, msg)
+        if nf:
+            die(nf)
     sh("git", "-C", root_, "add", *paths)
     st = sh("git", "-C", root_, "status", "--porcelain", *paths)
     if not st.stdout.strip():
         return True
-    sh("git", "-C", root_, "commit", "-m", msg)
+    # `-- paths` is the fix, not cosmetics: without it the commit sweeps every other staged file in the
+    # tree (see _foreign_file's docstring for the commit that proves it).
+    sh("git", "-C", root_, "commit", "-m", msg, "--", *paths)
     if os.environ.get("AGENCY_NO_PUSH") == "1":
         return True
     br = current_branch(root_)
