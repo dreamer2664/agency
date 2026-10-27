@@ -19,10 +19,16 @@ repo may carry "current orders" text.
    Releases). `dreamer2664/storage` is retired/read-only. Older instructions naming
    `storage` are void.
 4. **Workers ship their own work** (`ship` = green `SHIP_GATE.md` → merge → receipts).
-   Pre-merge manager approval is abolished for tier-work changes. Acceptance is
-   post-merge, two non-owner `accept-inspected` ballots within 48h; `deny` with
-   evidence → auto-revert. Tier-law changes (this file, START_HERE, red lines,
-   SHIP_GATE) still need 2 non-owner votes before merge + Director ratification.
+   Pre-merge manager approval is abolished for tier-work changes. **Amended
+   2026-10-27 by the Director: acceptance no longer requires a ballot quorum** —
+   the owner closes with `agency jobs accept <id> --reason '<head SHA> + what you
+   ran'`, and a `deny` with evidence from anyone is still a revert request. The
+   quorum was retired because it could not be cast on a job id at all (F48), not
+   because review is worthless: `vote`/`review next` remain for tasks and are welcome
+   everywhere. Tier-law changes (this file, START_HERE, red lines, SHIP_GATE) no
+   longer need 2 pre-merge votes either — they need Director ratification, which for
+   this very paragraph is his instruction of 2026-10-27. **The fail-closed SHIP_GATE
+   is untouched by this order: the machine still has to be green before main moves.**
 5. **Questions are protocol violations.** Ambiguity → conservative assumption logged
    in `HANDOFF.md` → proceed. Blockers → statement on the board → release lease →
    take other work. No holding position; sessions never end voluntarily.
@@ -53,6 +59,18 @@ repo may carry "current orders" text.
 
 ## Changelog
 
+- `2026-10-27.1` — **acceptance, per the Director's instruction of that day**: the
+  2-ballot quorum is retired and the owner closes a job with an evidence claim
+  (`jobs accept`, new). Reason recorded in AUDIT/`PATCH_NOTES` as F48: the quorum was
+  unaddressable for jobs (`vote` reads `board/tasks/`, jobs live in `jobs/`), so every
+  job ended in a state that looked pending and could never be satisfied; two of my own
+  shifts stalled on describing it rather than on the work. `review`/`vote` kept for
+  tasks and as voluntary peer review; `deny` with evidence still means revert. SHIP_GATE
+  and the red lines are unchanged — the gate is the safety, the ballot was the theatre.
+  Also same-day CLI fixes from using it: F43 (heartbeat rang nothing), F44 (latin-1
+  titles), F45 (`verify=True` polled "newest message" and declared a delivered message
+  lost), F46 (over-4096-BYTE bodies stored as an attachment, silently), F47 (bodies
+  flattened to one line). Suite 93 → 110 assertions across 13 files — and F49, found while writing that test: `run_all.py` printed `PASS <file> ()` for a file whose count it could not find, so my first version passed while contributing nothing to the total everyone quotes. The runner now reads the count from either stream and FAILS a green file with no count, and it takes a directory argument so that behaviour is testable against a fake tree (13th test file, 6 assertions).
 - `2026-10-20.3` — enforcement moved from prose into code: `onboard` (entry battery
   as one command), phase floors (`jobs phase/gate` — min_hours + evidence, fail-closed),
   lifecycle claim gating (ROOKIE ≤4h · AGING none · RETIRED none — mechanical),
