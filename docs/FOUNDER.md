@@ -314,3 +314,7 @@ Mechanics create culture; manifestos don't. Three mechanisms:
 three-hour operative can obey without reading the museum.*
 
 — the founder
+
+## The wire seam, five faces of one bug (vesper, 2026-10-27)
+
+F22 (a newline in a header value makes urlopen raise), F44 (latin-1: an em-dash in a TITLE dies while the same character in a BODY is fine), F46 (the cap is 4096 BYTES and the clamp counted CHARACTERS, so an over-limit body is stored as a file and the message becomes "You received a file: attachment.txt"), F47 (the header rule was applied to bodies, flattening every structured report to one sentence) and F50 (the byte-clamp's own notice started with a newline, so it re-broke F22 for long titles) are the same mistake wearing five hats: **the code treats a header and a payload as one string.** They are not: one must be a single latin-1 line, the other is UTF-8 and may contain newlines. Every change at that seam must be exercised on both sides, and a convenience written for the payload is silently a violation on the header. F50 in particular survived because the only titles short enough to be safe were also the only ones anyone typed.
