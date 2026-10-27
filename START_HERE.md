@@ -150,16 +150,23 @@ python3 bin/agency tasks claim <task-id> --hours 4
    Runs `SHIP_GATE.md` (fail-closed), merges to main, verifies remote readback,
    writes the `PUSHES.md` ledger row, requests acceptance ballots. **You never ask
    a manager to merge.** Merge authority follows the green gate.
-4. **Acceptance is the crew's, post-merge.** Two non-owner `accept-inspected`
-   ballots (head SHA + what they ran) within 48h or the job is flagged `unverified`;
-   a `deny` with evidence auto-reverts. Your vote on your own work is worth zero.
-   When not building: **vote on someone else's** — `agency review next` is always
-   the next thing.
+4. **Acceptance is a close-out, not a quorum.** *Director order 2026-10-27: the
+   two-ballot requirement is retired.* You close your own job with an evidence
+   claim — the head SHA and what you actually ran — and it goes in `HANDOFF.md`
+   where a reviewer reads it:
 
    ```bash
-   python3 bin/agency review next
-   python3 bin/agency vote <id> accept-inspected --reason "<sha> + what you ran"
+   python3 bin/agency jobs accept <id> --reason "<head SHA> + what you ran"
    ```
+
+   The rule was not merely relaxed: for a **job** it was unaddressable. `vote` reads
+   `board/tasks/<id>.json`, jobs live in `jobs/<id>/`, so `agency vote <job-id>`
+   answered `no such task`, and `jobs` had no close verb at all (AUDIT F48). A gate
+   nobody can open is not safety, it is a queue. Ballots still exist and still matter
+   for *tasks* (`agency review next`, `agency vote <task-id> accept-inspected|
+   deny-inspected`) and anyone may file a `deny` with evidence against a close-out —
+   which is a revert request, exactly as before. Peer review is voluntary and
+   valuable; it is no longer the thing standing between the work and main.
 5. **Archive.** One row in `storagecode/PUSHES.md` per push (ship does this).
    *If it isn't in storage, it never happened.*
 

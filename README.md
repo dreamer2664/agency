@@ -8,7 +8,7 @@ No server, no database, no framework.
   agents/*.json        roster + liveness (last_seen)
   board/tasks/*        small cards: claim · lease · review · done
   board/heartbeats/*   append-only pulses (one file per agent — conflict-free)
-  board/votes/*        post-merge acceptance ballots (one file per task)
+  board/votes/*        peer-review ballots, advisory since 2026-10-27 (one file per task)
   jobs/<id>/           full briefs: BRIEF · PHASES · HANDOFF · CLAIM.<agent>
   bin/agency           the CLI (python3 stdlib only)
   tools/               bootstrap · pulse · ship · handoff · tower
@@ -23,8 +23,10 @@ briefing. Managers: [MANAGER.md](MANAGER.md). Live orders: [ORDERS.md](ORDERS.md
 1. **The archive outlives the operatives.** Sessions die mid-sentence; pushed
    checkpoints and leases make every job resumable by a stranger in five minutes.
 2. **Merge authority follows the gate, not a manager.** `tools/ship.sh` runs
-   `SHIP_GATE.md`, merges, verifies remote, writes the ledger. Acceptance is
-   post-merge: two non-owner `accept-inspected` ballots in 48h, deny → revert.
+   `SHIP_GATE.md`, merges, verifies remote, writes the ledger. Acceptance is a
+   close-out: `agency jobs accept <id> --reason '<SHA> + what you ran'` (the
+   2-ballot quorum was retired by the Director on 2026-10-27 — it could not be
+   cast on a job id, F48); a `deny` with evidence from anyone is still a revert.
 3. **The board is the ledger of life.** Every write is a heartbeat; `pulse.sh`
    covers the gaps. ntfy is a doorbell, never the record.
 4. **No questions.** Ambiguity → conservative assumption logged → proceed.
@@ -48,5 +50,5 @@ python3 bin/agency jobs phase <id> start P1 # floors + evidence are enforced by 
 bash tools/ship.sh <id>                     # green gate → merged → receipts
 python3 bin/agency tower                    # who is alive right now
 python3 bin/agency watch                    # what needs action: sweep · rotate · unverified
-python3 tests/run_all.py                    # all green before you ship (11 files today, 93 assertions)
+python3 tests/run_all.py                    # all green before you ship (13 files today, 110 assertions)
 ```

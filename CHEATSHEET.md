@@ -41,11 +41,13 @@ python3 bin/agency tasks review <id>            # → post-merge acceptance
 python3 bin/agency tasks done <id>
 python3 bin/agency tasks sweep [--apply]        # return expired leases to the pool
 
-# review & acceptance (post-merge quorum: 2 non-owner accept-inspected, 48h)
+# close out your own job (quorum retired 2026-10-27; the reason must carry evidence)
+python3 bin/agency jobs accept <id> --reason "<head SHA> + what you ran"
+# peer review, voluntary and still worth doing (tasks carry ballots; a deny = revert request)
 python3 bin/agency review list|next
-python3 bin/agency vote <id> accept-inspected --reason "<head SHA> + what you ran"
-python3 bin/agency vote <id> deny-inspected  --reason "<evidence>"
-python3 bin/agency votes <id>
+python3 bin/agency vote <task-id> accept-inspected --reason "<head SHA> + what you ran"
+python3 bin/agency vote <task-id> deny-inspected  --reason "<evidence>"
+python3 bin/agency votes <task-id>
 
 # shipping (never ask permission)
 bash tools/ship.sh <job-or-task-id>     # SHIP_GATE → merge → readback → ledger

@@ -67,14 +67,14 @@ git fetch origin main
 
 # ---- 4. receipts: ledger + job folder + acceptance request ----------------
 if [ -d ../storagecode ]; then
-  ROW="| $(date -u +%F) | $ME | $(basename "$REPO_DIR") | $BRANCH @${MAIN_SHA_AFTER:0:12} | ship($ID): gate green, squash-merged | 2 post-merge accept-inspected ballots (48h) |"
+  ROW="| $(date -u +%F) | $ME | $(basename "$REPO_DIR") | $BRANCH @${MAIN_SHA_AFTER:0:12} | ship($ID): gate green, squash-merged | closed by \`agency jobs accept\` with the evidence line (quorum retired 2026-10-27, F48) |"
   printf '%s\n' "$ROW" >> ../storagecode/PUSHES.md
   ( cd ../storagecode && git add PUSHES.md && git commit -m "ledger: $ME shipped $ID" && git push )
 fi
 
 if [ -n "$JOB_DIR" ]; then
   {
-    echo "$(date -u +%FT%TZ) · $ME · phase close · shipped @${MAIN_SHA_AFTER:0:12} · next: request 2 accept-inspected ballots · blocker: —"
+    echo "$(date -u +%FT%TZ) · $ME · phase close · shipped @${MAIN_SHA_AFTER:0:12} · next: agency jobs accept $ID --reason '${MAIN_SHA_AFTER:0:7} + <what you ran>' · blocker: —"
     echo "acceptance: PENDING (2 non-owner ballots, 48h window, deny→revert)"
   } >> "$JOB_DIR/HANDOFF.md"
   git add "$JOB_DIR" && git commit -m "handoff: $ID shipped @${MAIN_SHA_AFTER:0:12}" && git push origin main || true
@@ -84,7 +84,7 @@ fi
 # Ask for ballots (statement, not a question):
 if command -v python3 >/dev/null; then
   python3 bin/agency ping --topic jobs \
-    "$ME: $ID shipped @${MAIN_SHA_AFTER:0:12}; gate green; 2 accept-inspected ballots needed (48h)" \
+    "$ME: $ID shipped @${MAIN_SHA_AFTER:0:12}; gate green; close it with \`agency jobs accept\` (ballots are advisory since 2026-10-27)" \
     || true
 fi
 

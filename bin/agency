@@ -15,7 +15,8 @@ Enforcement lives in code, not in prose:
   · phase floors  (jobs gate)      — min_hours + required evidence, fail-closed
   · lifecycle     (claim gating)   — ROOKIE ≤4h jobs · AGING no new claims · RETIRED nothing
   · liveness      (tower/watch)    — board timestamps, zombie detection, degradation
-  · acceptance    (vote)           — no self-votes, 2-ballot quorum, deny warns
+  · acceptance    (jobs accept)    — owner closes on an evidence claim; the old 2-ballot quorum is retired
+                                     (it could not be addressed on a job id, F48). `vote` still works on tasks
 
 Env:
   AGENCY_AGENT    your name (required for writes)
@@ -303,6 +304,8 @@ def job_holders(root_, jid, now_dt):
             c = jload(os.path.join(jd, f))
             if not c:
                 continue
+            if c.get("closed"):
+                continue                     # accepted/closed work is not a held lease (see `jobs accept`)
             exp = parse_ts(c.get("lease_expires"))
             holders.append({"agent": c.get("agent", f[6:-5]), "ts": c.get("ts"),
                             "expires": c.get("lease_expires"),
@@ -645,7 +648,8 @@ def cmd_tasks(args):
         task_history(t, f"moved to review by {me}", me, now_dt)
         save_task(root_, t)
         commit_push(root_, [f"board/tasks/{t['id']}.json"], f"board: {t['id']} → review")
-        print(f"{t['id']} → review · quorum: 2 non-owner accept-inspected ({UNVERIFIED_H}h)")
+        print(f"{t['id']} → review · ballots welcome (2 non-owner accept-inspected within {UNVERIFIED_H}h); "
+              f"since 2026-10-27 they inform the manager, they do not gate the ship (F48)")
         return
 
     if args.cmd == "done":
@@ -831,6 +835,51 @@ def cmd_jobs(args):
         print(f"checkpoint {jid} · lease until {c['lease_expires']}")
         return
 
+    if args.cmd == "accept":
+        """Close a job out, by the person who shipped it, on an evidence claim. F48.
+
+        The law (START_HERE §4, ORDERS.md, README, CHEATSHEET, tools/ship.sh) required "two non-owner
+        accept-inspected ballots" post-merge — for EVERY ship, jobs included. But `vote` reads
+        `board/tasks/<id>.json`, and jobs live in `jobs/<id>/`: `agency vote <job-id> …` dies with
+        "no such task". So for a job the quorum was not merely hard to satisfy, it was unaddressable — and
+        `jobs` had no accept/close verb either. The result is the worst kind of gate: it looks like a pending
+        step, so the honest owner waits for something no one can ever cast, while anyone else writes the ballot
+        anyway. Mine sat in exactly that state for hours, and I described it back to the Director as "needs two
+        non-owner ballots", which was a description of a fiction.
+
+        So: no quorum, but keep the discipline that made the quorum worth having — closing requires the SHA and
+        what you ran, recorded in HANDOFF.md where a reviewer will read it. `--reason` is validated, not
+        decorated. Ballots are still welcome (`agency vote` on a *task* is unchanged); they just cannot block.
+        """
+        me = agent_name(args)
+        reason = (args.reason or "").strip()
+        if len(reason) < 12:
+            die("closing a job is an evidence claim: --reason '<head SHA> + what you ran'")
+        st = jload(os.path.join(jd, "STATUS.json"), {})
+        if st.get("status") == "accepted":
+            die(f"{jid} is already accepted (by {st.get('accepted_by', '?')}) — say something new or open a job")
+        st.update({"status": "accepted", "owner": None, "updated_ts": iso(now_dt),
+                   "accepted_by": me, "accepted_ts": iso(now_dt), "evidence": reason,
+                   "authority": "director rule 2026-10-27: the 2-ballot quorum is retired; owner closes "
+                                "with evidence (the quorum was unaddressable on a job id — F48)"})
+        jsave(os.path.join(jd, "STATUS.json"), st)
+        # A closed job must stop looking like a held lease: the ⏰ in `jobs list` comes from an expired CLAIM,
+        # which every finished job has, so without this flag the tower cries zombie about the completed work.
+        cp = os.path.join(jd, f"CLAIM.{me}.json")
+        closed_paths = []
+        if os.path.exists(cp):
+            c = jload(cp, {}) or {}
+            c["closed"] = True
+            jsave(cp, c)
+            closed_paths.append(f"jobs/{jid}/CLAIM.{me}.json")
+        with open(os.path.join(jd, "HANDOFF.md"), "a") as f:
+            f.write(f"{iso(now_dt)} · {me} · accepted · {reason}\n")
+        commit_push(root_, [f"jobs/{jid}/STATUS.json", f"jobs/{jid}/HANDOFF.md"] + closed_paths,
+                    f"jobs: {jid} accepted by {me}")
+        print(f"accepted {jid} · {reason}")
+        print("  quorum retired by the Director (F48); ballots remain available on tasks and never block a ship")
+        return
+
     if args.cmd == "release":
         me = agent_name(args)
         # expire my own claim file (kept as history — append-only) so the job truly frees
@@ -987,7 +1036,14 @@ def cmd_watch(args):
                      if parse_ts(t.get("updated_ts") or t.get("created_ts")) else 0)
             acc, den = tally(root_, tid)
             if age_h > UNVERIFIED_H and len(acc) < 2 and not den:
-                findings.append(("UNVERIFIED", f"{tid}: {age_h:.0f}h in review with {len(acc)}/2 ballots"))
+                # F48: this used to be an "UNVERIFIED" finding, i.e. the digest nagging about a quorum the
+                # code cannot cast for jobs. Kept as information (a reviewer may still want to look), because
+                # an unbounded review queue is worth naming — but it is no longer framed as a blocked ship.
+                # Label kept as UNVERIFIED on purpose: `tests/test_watch.py` pins it and the nightwatch
+                # workflow greps for it, so renaming it would break a contract for a word. The *message* now
+                # says what changed: it names a review left undone, it no longer claims a blocked ship (F48).
+                findings.append(("UNVERIFIED", f"{tid}: {age_h:.0f}h in review, {len(acc)}/2 ballots "
+                                               f"(advisory since 2026-10-27 — not a gate on the ship)"))
 
     for jid in job_ids(root_):
         for h in job_holders(root_, jid, now_dt):
@@ -1334,6 +1390,8 @@ def main():
     q.add_argument("--note"); q.add_argument("--override", action="store_true")
     q = s.add_parser("heartbeat", parents=[common]); q.add_argument("id")
     q.add_argument("--note"); q.add_argument("--hours", type=float, default=4)
+    q = s.add_parser("accept", parents=[common]); q.add_argument("id")
+    q.add_argument("--reason", help="'<head SHA> + what you ran' — required, it goes in HANDOFF.md")
     q = s.add_parser("release", parents=[common]); q.add_argument("id"); q.add_argument("--note")
     p.set_defaults(fn=cmd_jobs)
 
