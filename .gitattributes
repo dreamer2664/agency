@@ -1,0 +1,6 @@
+# Executable scripts must stay executable and use LF: a 100644 start script and a CRLF .sh are the two ways a Linux clone breaks silently.
+*.sh        text eol=lf
+bin/agency  text eol=lf filemode
+*.py        text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf

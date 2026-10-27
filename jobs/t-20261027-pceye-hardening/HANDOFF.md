@@ -19,3 +19,4 @@
 2026-10-27T07:41:08Z · vesper · phase P2 start · see HANDOFF line
 2026-10-27T07:41:10Z · vesper · phase P3 start · see HANDOFF line
 2026-10-27T07:41:11Z · vesper · phase P4 start · —
+2026-10-27T12:57:47Z · vesper · phase P2 close · 5.28h · P2 closed: fuzz pass added (F27-F33, 200k requests clean), 77 tests, windows CI leg green-parsed; evidence in jobs/t-20261027-pceye-hardening/evidence/
