@@ -1136,6 +1136,22 @@ HEADER_SAFE = {"\u2014": "-", "\u2013": "-", "\u2212": "-", "\u2026": "...", "\u
                "\u2264": "<=", "\u2248": "~", "\u2713": "ok", "\u2717": "no"}
 
 
+WIRE_MAX_BYTES = 4000      # ntfy's message limit is 4096 bytes; 4000 leaves room for the notice below
+
+
+def _clamp_bytes(v, n):
+    """Flatten to one line and cut to `n` BYTES, never mid-character. `n` may exceed WIRE_MAX_BYTES only for
+    bodies the caller has already sized; the server's own cap is what the default in publish() enforces."""
+    flat = " ".join(str(v or "").splitlines())
+    limit = min(n, WIRE_MAX_BYTES) if n > WIRE_MAX_BYTES else n
+    raw = flat.encode("utf-8")
+    if len(raw) <= limit:
+        return flat
+    cut = raw[:limit].decode("utf-8", "ignore")            # 'ignore' drops a split multi-byte tail cleanly
+    dropped = len(raw) - len(cut.encode("utf-8"))
+    return cut + f"\n[… {dropped} bytes dropped: the wire caps a message at 4096 BYTES, not characters]"
+
+
 def wire_text(msg, title):
     """Newlines inside an HTTP header value make urlopen raise — and the old handler swallowed that and
     printed 'ping failed', so a multi-line message looked like a dead wire.
@@ -1146,7 +1162,12 @@ def wire_text(msg, title):
     reader investigates as a wire outage. I lost a formalcode message that way and only found it by reading the
     traceback. So: fold the title to what the transport can carry, and keep the body verbatim.
     """
-    clean = lambda v, n: " ".join(str(v or "").splitlines())[:n]
+    # F46: the server's limit is 4096 BYTES and `[:4000]` counts characters. A long message of em-dashes,
+    # arrows or any CJK text is 3 bytes a character, so the CLI's own safety margin could be 12 KB and the
+    # server then does something far worse than rejecting it: it stores the body as a FILE and publishes the
+    # placeholder "You received a file: attachment.txt". The ping looks successful, the read-back of a busy
+    # topic may even find that placeholder, and the crew reads a shrug instead of the finding.
+    clean = _clamp_bytes
     ttl = clean(title, 120)
     try:
         ttl.encode("latin-1")
@@ -1193,14 +1214,18 @@ def publish(topic, message, title=None, verify=False, timeout=12):
                                      headers={"Title": ttl or "agency"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             raw = r.read().strip()
-        sent_id = ""
+        reply = None
         try:
-            sent_id = (_json.loads(raw) or {}).get("id", "") if raw else ""
+            reply = _json.loads(raw) if raw else {}
         except Exception:
-            pass
-        if not sent_id:
-            return False, (f"published to {topic} with no id in the reply — cannot claim a delivery I cannot "
-                           f"name; ntfy always answers with one")
+            reply = {}
+        sent_id = (reply or {}).get("id", "")
+        if reply and reply.get("attachment"):
+            # F46, live: my 4.2 KB finding was stored as attachment.txt and the published message became
+            # "You received a file: attachment.txt". Nothing about that is an HTTP error, so only an explicit
+            # check turns it into a failure instead of a silent rewriting of what the crew sees.
+            return False, (f"the wire stored {topic} as a FILE, not a message (body was {len(body.encode())} "
+                           f"bytes; the limit is 4096) — split it or shorten it; a placeholder is not a finding")
         if not verify:
             return True, f"pinged {topic} (id {sent_id})"
         deadline = time.time() + min(10.0, max(3.0, float(timeout)))
