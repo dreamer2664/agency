@@ -1227,7 +1227,11 @@ def _clamp(v, n, one_line=True):
         return text
     cut = raw[:n].decode("utf-8", "ignore")          # 'ignore' drops a split multi-byte tail cleanly
     dropped = len(raw) - len(cut.encode("utf-8"))
-    return cut + f"\n[… {dropped} bytes dropped: the wire caps a message at 4096 BYTES, not characters]"
+    # F50: the notice must not start with \n. A body can carry one; a HEADER cannot, and a newline there is the
+    # exact defect F22 was written for — my own byte-clamp reintroduced it for any title over 120 bytes, because
+    # the truncation marker was designed for the payload and shared with the header path.
+    notice = f"[… {dropped} bytes dropped: the wire caps a message at 4096 BYTES, not characters]"
+    return (cut + " " + notice) if one_line else (cut + "\n" + notice)
 
 
 def wire_text(msg, title):
@@ -1244,6 +1248,7 @@ def wire_text(msg, title):
     the finding. No HTTP error, no truncation — a rewriting.
     """
     ttl = _clamp(title, 120)
+    ttl = " ".join(ttl.splitlines())          # belt: a header value with a newline is invalid whatever produced it
     try:
         ttl.encode("latin-1")
     except UnicodeEncodeError:
