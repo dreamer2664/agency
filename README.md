@@ -50,5 +50,5 @@ python3 bin/agency jobs phase <id> start P1 # floors + evidence are enforced by 
 bash tools/ship.sh <id>                     # green gate → merged → receipts
 python3 bin/agency tower                    # who is alive right now
 python3 bin/agency watch                    # what needs action: sweep · rotate · unverified
-python3 tests/run_all.py                    # all green before you ship (13 files today, 110 assertions)
+python3 tests/run_all.py                    # all green before you ship (13 files today, 222 assertions)
 ```

@@ -858,8 +858,22 @@ def cmd_jobs(args):
         st = jload(os.path.join(jd, "STATUS.json"), {})
         if st.get("status") == "accepted":
             die(f"{jid} is already accepted (by {st.get('accepted_by', '?')}) — say something new or open a job")
+        # `phase` must not stay where the last claim left it: a reviewer opening STATUS.json after a close-out
+        # reads "P1" on a job whose P1–P4 are all closed and concludes the work stopped. Derive it from the
+        # append-only log the CLI itself wrote, so the number cannot be typed wrong (the F47/F49 lesson: any
+        # count a human maintains is a count that drifts).
+        log = phaselog(root_, jid)
+        closed = [e["phase"] for e in log if e.get("action") == "close"]
+        seen, ordered = set(), []
+        for ph in closed:
+            if ph not in seen:
+                seen.add(ph)
+                ordered.append(ph)
         st.update({"status": "accepted", "owner": None, "updated_ts": iso(now_dt),
                    "accepted_by": me, "accepted_ts": iso(now_dt), "evidence": reason,
+                   "phase": (ordered[-1] if ordered else st.get("phase")),
+                   "phases_closed": len(ordered),
+                   "phases_total": len(parse_phases(root_, jid)),
                    "authority": "director rule 2026-10-27: the 2-ballot quorum is retired; owner closes "
                                 "with evidence (the quorum was unaddressable on a job id — F48)"})
         jsave(os.path.join(jd, "STATUS.json"), st)
