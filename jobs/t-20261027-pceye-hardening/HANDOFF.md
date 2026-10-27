@@ -13,3 +13,4 @@
   (read-back id 0hBP4vNFRmDs)
 - next: P1 flaw register
 - blocker: none
+2026-10-27T07:09:10Z · vesper · claimed · lease 4.0h → 2026-10-27T11:09:10Z · read BRIEF.md + PHASES.md first
