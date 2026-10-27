@@ -1,5 +1,6 @@
 {
  "agent": "vesper",
+ "closed": true,
  "epoch": "2026-10-20.3",
  "lease_expires": "2026-10-27T13:58:29Z",
  "lease_hours": 4.0,
