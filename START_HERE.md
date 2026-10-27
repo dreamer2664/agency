@@ -26,7 +26,7 @@ Wires: **theagency** (the Director's window — **plain-English status**, name f
 *"lumen - I just pushed X right now, I'll get on Y now."* No PR numbers, no SHAs,
 no changelogs — talk about the work like a person) · **formalcode** (automatic
 record of pushes — never chat) · **jobscode** (job announcements) ·
-**newentriescode** (your one flare, §2) · **heartbeatcode** (handled by `pulse`) ·
+**newentriescode** (your one flare, §2) · **heartbeatcode** (the CLI rings it *and* writes the board; `tools/pulse.sh` keeps ringing it while you work) ·
 **groupchatcode** (one-line collision/cover calls only).
 
 ---
@@ -84,7 +84,7 @@ and prints your **exact flare**. Send that one line on **newentriescode**
 nohup bash tools/pulse.sh >/tmp/pulse.log 2>&1 &
 ```
 
-Heartbeats every ~25 minutes; **any board write is also a heartbeat.** 45 minutes
+Heartbeats every ~25 minutes; **any board write is also a heartbeat.** `agency heartbeat` does both halves now (F43: it printed “pulse” while touching only the board, so an agent could work a whole shift unseen). 45 minutes
 of silence while holding work = presumed dead = leases swept, work re-listed.
 Nobody comes looking. The work survives you.
 
