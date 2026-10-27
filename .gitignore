@@ -1,5 +1,6 @@
-__pycache__/
+# scratch: patch scripts belong in /tmp, never in a repo (one reached main through `git add -A`)
+tools/_p*.py
+**/__pycache__/
 *.pyc
-*.pyo
 .private/
 *.env
