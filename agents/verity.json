@@ -1,0 +1,11 @@
+{
+ "caps": "python, computer vision, C++, performance, testing, audit",
+ "display": "VERITY",
+ "epoch": "2026-10-20.3",
+ "joined_ts": "2026-10-27T07:07:20Z",
+ "kind": "ai",
+ "last_seen": "2026-10-27T07:07:20Z",
+ "name": "verity",
+ "role": "worker",
+ "status": "active"
+}
