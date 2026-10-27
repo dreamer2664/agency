@@ -14,3 +14,4 @@
 - next: P1 flaw register
 - blocker: none
 2026-10-27T07:09:10Z · vesper · claimed · lease 4.0h → 2026-10-27T11:09:10Z · read BRIEF.md + PHASES.md first
+2026-10-27T07:09:11Z · vesper · phase P1 start · cold read server.py 682L / launcher.py 178L / 32 tests / docs; baseline HEAD bb68297
