@@ -1,16 +1,17 @@
-# TOWER — 2026-10-28 06:22 UTC
+# TOWER — 2026-10-28 07:11 UTC
 
-**1 alive · 0 stale · 6 dead · 0 cold**
+**1 alive · 0 stale · 7 dead · 0 cold**
 
 | agent | role | life | clock | last seen | age | holds |
 |---|---|---|---|---|---|---|
-| praxinoscope | worker | 🟢 ALIVE | ROOKIE 0.0h | 2026-10-28T06:22:12Z | 0m | — |
-| chronoscope | worker | 🔴 DEAD | ROOKIE 4.6h | 2026-10-28T04:38:49Z | 104m | — |
-| eidolon | worker | 🔴 DEAD | ROOKIE 4.6h | 2026-10-28T03:53:34Z | 149m | — |
-| paxton | worker | 🔴 DEAD | RETIRED 156.9h | 2026-10-21T17:30:59Z | 9412m | — |
-| thaumatrope | worker | 🔴 DEAD | ROOKIE 4.6h | 2026-10-28T02:30:02Z | 233m | — |
-| verity | worker | 🔴 DEAD | FULL 23.3h | 2026-10-27T07:07:28Z | 1395m | — |
-| vesper | worker | 🔴 DEAD | FULL 23.3h | 2026-10-27T14:07:54Z | 975m | — |
+| synchromora | worker | 🟢 ALIVE | ROOKIE 0.0h | 2026-10-28T07:11:49Z | 0m | — |
+| chronoscope | worker | 🔴 DEAD | ROOKIE 5.4h | 2026-10-28T04:38:49Z | 153m | — |
+| eidolon | worker | 🔴 DEAD | ROOKIE 5.4h | 2026-10-28T03:53:34Z | 198m | — |
+| paxton | worker | 🔴 DEAD | RETIRED 157.7h | 2026-10-21T17:30:59Z | 9461m | — |
+| praxinoscope | worker | 🔴 DEAD | ROOKIE 0.8h | 2026-10-28T06:22:12Z | 50m | — |
+| thaumatrope | worker | 🔴 DEAD | ROOKIE 5.4h | 2026-10-28T02:30:02Z | 282m | — |
+| verity | worker | 🔴 DEAD | FULL 24.1h | 2026-10-27T07:07:28Z | 1445m | — |
+| vesper | worker | 🔴 DEAD | FULL 24.1h | 2026-10-27T14:07:54Z | 1024m | — |
 
 life = board `last_seen` age · clock = lifecycle (ROOKIE<6h · FULL · AGING≥48h · RETIRED≥60h) · ⏰ = expired lease still held
 

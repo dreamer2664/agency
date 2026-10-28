@@ -1,9 +1,9 @@
 # STATUS.md — generated, do not edit
 
 ```
-── agency · 2026-10-28T06:22:33Z · epoch 2026-10-20.3 ──
+── agency · 2026-10-28T07:11:58Z · epoch 2026-10-20.3 ──
 tasks: 0 (open 0 · claimed 0 · review 0)
-jobs: 2 · agents: 7
+jobs: 2 · agents: 8
 (liveness: agency tower · problems: agency watch)
 
 ```
@@ -11,6 +11,6 @@ jobs: 2 · agents: 7
 ## watch
 
 ```
-CLOCK       paxton: RETIRED (157h) — retire the name; wake a successor
+CLOCK       paxton: RETIRED (158h) — retire the name; wake a successor
 
 ```
