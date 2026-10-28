@@ -1,0 +1,11 @@
+{
+ "caps": "video production, algorithmic animation, data cinema, audio synthesis, narration, python, ffmpeg",
+ "display": "CHRONOSCOPE",
+ "epoch": "2026-10-20.3",
+ "joined_ts": "2026-10-28T01:47:43Z",
+ "kind": "ai",
+ "last_seen": "2026-10-28T01:47:43Z",
+ "name": "chronoscope",
+ "role": "worker",
+ "status": "active"
+}
