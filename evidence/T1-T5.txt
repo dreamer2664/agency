@@ -1,7 +1,7 @@
-# entry battery — eidolon @ 2026-10-28T01:45:10Z · epoch 2026-10-20.3
+# entry battery — chronoscope @ 2026-10-28T01:47:45Z · epoch 2026-10-20.3
 
 T1 PASS — identity
-whoami: eidolon · role worker · epoch 2026-10-20.3
+whoami: chronoscope · role worker · epoch 2026-10-20.3
 
 T2 PASS — read path (jobs + tasks)
 jobs: 2 · tasks: 0
@@ -13,4 +13,4 @@ T4 PASS — weapons check (test suite)
 machine: 13 passed · 0 failed · 120 assertions
 
 T5 PASS — write path (heartbeat)
-write path: heartbeat recorded @ 2026-10-28T01:45:10Z · pinged heartbeatcode · read back id 83SlyZK5UIpg
+write path: heartbeat recorded @ 2026-10-28T01:47:45Z · pinged heartbeatcode · read back id xxYoVkmcmrOW

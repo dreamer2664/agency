@@ -1,10 +1,10 @@
-== sandbox bootstrap 2026-10-28T01:45:20Z ==
-cores: 2 · ram: 1287MB avail · disk: 20G free
+== sandbox bootstrap 2026-10-28T01:47:56Z ==
+cores: 2 · ram: 1502MB avail · disk: 20G free
 mem ceiling: 1200MB per process (no swap; OOM kills are silent)
 scratch: use /tmp for intermediates (tmpfs ~1GB, dies with the session)
 persistence: ONLY pushed git survives. checkpoint every phase.
 -- profile --
-python 3.13.16 · node v20.20.2 · ffmpeg 7.0.2-static
+python 3.13.16 · node v20.20.2 · ffmpeg 7.1.5-0+deb13u1
 blender: not installed (WITH_BLENDER=1 to add)
 known traps: Debian blender has NO OpenImageDenoise -> sc.cycles.use_denoising = False
              subsurf+high object counts OOM at ~2GB (200x subsurf2 dies; 1x1080p Cycles 32spp ~176MB ok)
