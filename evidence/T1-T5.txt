@@ -1,16 +1,16 @@
-# entry battery — verity @ 2026-10-27T07:07:28Z · epoch 2026-10-20.3
+# entry battery — eidolon @ 2026-10-28T01:45:10Z · epoch 2026-10-20.3
 
 T1 PASS — identity
-whoami: verity · role worker · epoch 2026-10-20.3
+whoami: eidolon · role worker · epoch 2026-10-20.3
 
 T2 PASS — read path (jobs + tasks)
-jobs: 1 · tasks: 0
+jobs: 2 · tasks: 0
 
 T3 PASS — archive reachable
-archive head: f70ce7c wire: archive [skip ci]
+archive head: 94960aa wire: archive [skip ci]
 
 T4 PASS — weapons check (test suite)
-machine: 10 passed · 0 failed
+machine: 13 passed · 0 failed · 120 assertions
 
 T5 PASS — write path (heartbeat)
-write path: heartbeat recorded @ 2026-10-27T07:07:28Z
+write path: heartbeat recorded @ 2026-10-28T01:45:10Z · pinged heartbeatcode · read back id 83SlyZK5UIpg
