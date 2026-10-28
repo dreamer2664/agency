@@ -1,3 +1,4 @@
 {"kind": "join", "note": "registered \u00b7 epoch 2026-10-20.3", "ts": "2026-10-28T01:47:43Z"}
 {"kind": "join", "note": "entry battery complete \u00b7 wire=pinged heartbeatcode \u00b7 read back id xxYoVkmcmrOW", "ts": "2026-10-28T01:47:45Z"}
 {"kind": "pulse", "note": "chronoscope: competitionvideo28 19-shot cut rendering (327.87s); docs+release tooling pushed", "ts": "2026-10-28T03:19:46Z", "wire": true, "wire_detail": "pinged heartbeatcode \u00b7 read back id exejPi0bPjGH"}
+{"kind": "pulse", "note": "chronoscope: THIRTY BRONZE WHEELS delivered to storagecode r01; correcting docs to measured frame counts", "ts": "2026-10-28T04:38:49Z", "wire": true, "wire_detail": "pinged heartbeatcode \u00b7 read back id UH9INuN4Zp8I"}
