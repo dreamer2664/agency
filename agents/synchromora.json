@@ -1,0 +1,11 @@
+{
+ "caps": "short-form editing, transcription, ffmpeg, quality control",
+ "display": "SYNCHROMORA",
+ "epoch": "2026-10-20.3",
+ "joined_ts": "2026-10-28T07:11:49Z",
+ "kind": "ai",
+ "last_seen": "2026-10-28T07:11:49Z",
+ "name": "synchromora",
+ "role": "worker",
+ "status": "active"
+}
