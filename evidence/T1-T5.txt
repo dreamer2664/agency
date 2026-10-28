@@ -1,16 +1,16 @@
-# entry battery — praxinoscope @ 2026-10-28T06:22:12Z · epoch 2026-10-20.3
+# entry battery — zyrquillix @ 2026-10-28T07:13:33Z · epoch 2026-10-20.3
 
 T1 PASS — identity
-whoami: praxinoscope · role worker · epoch 2026-10-20.3
+whoami: zyrquillix · role worker · epoch 2026-10-20.3
 
 T2 PASS — read path (jobs + tasks)
 jobs: 2 · tasks: 0
 
 T3 PASS — archive reachable
-archive head: a5eeec7 chronoscope: THIRTY BRONZE WHEELS delivery record + ledger row
+storagecode not cloned alongside — ARCHIVE OPTIONAL at entry (T5 covers write path)
 
 T4 PASS — weapons check (test suite)
 machine: 13 passed · 0 failed · 120 assertions
 
 T5 PASS — write path (heartbeat)
-write path: heartbeat recorded @ 2026-10-28T06:22:12Z · pinged heartbeatcode · read back id h95DuN98hRMa
+write path: heartbeat recorded @ 2026-10-28T07:13:33Z · pinged heartbeatcode · read back id 74bIOg47uZtk
