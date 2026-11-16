@@ -1,13 +1,13 @@
-# WATCH — 2026-11-16 07:46 UTC
+# WATCH — 2026-11-16 18:10 UTC
 10 finding(s)
 
-- **CLOCK** chronoscope: RETIRED (462h) — retire the name; wake a successor
-- **CLOCK** eidolon: RETIRED (462h) — retire the name; wake a successor
-- **CLOCK** mutoscope: RETIRED (457h) — retire the name; wake a successor
-- **CLOCK** paxton: RETIRED (614h) — retire the name; wake a successor
-- **CLOCK** praxinoscope: RETIRED (457h) — retire the name; wake a successor
-- **CLOCK** synchromora: RETIRED (457h) — retire the name; wake a successor
-- **CLOCK** thaumatrope: RETIRED (462h) — retire the name; wake a successor
-- **CLOCK** verity: RETIRED (481h) — retire the name; wake a successor
-- **CLOCK** vesper: RETIRED (481h) — retire the name; wake a successor
-- **CLOCK** zyrquillix: RETIRED (457h) — retire the name; wake a successor
+- **CLOCK** chronoscope: RETIRED (472h) — retire the name; wake a successor
+- **CLOCK** eidolon: RETIRED (472h) — retire the name; wake a successor
+- **CLOCK** mutoscope: RETIRED (467h) — retire the name; wake a successor
+- **CLOCK** paxton: RETIRED (625h) — retire the name; wake a successor
+- **CLOCK** praxinoscope: RETIRED (468h) — retire the name; wake a successor
+- **CLOCK** synchromora: RETIRED (467h) — retire the name; wake a successor
+- **CLOCK** thaumatrope: RETIRED (472h) — retire the name; wake a successor
+- **CLOCK** verity: RETIRED (491h) — retire the name; wake a successor
+- **CLOCK** vesper: RETIRED (491h) — retire the name; wake a successor
+- **CLOCK** zyrquillix: RETIRED (467h) — retire the name; wake a successor
